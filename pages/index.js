@@ -1210,10 +1210,10 @@ function ChartCard({ title, children, onViewMore }) {
         {onViewMore && (
           <button
             type="button"
-            className="text-sm font-bold text-gray-900"
+            className="inline-flex items-center gap-1.5 border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-white hover:border-gray-300"
             onClick={onViewMore}
           >
-            VIEW MORE
+            <span className="material-icons">arrow_forward</span>VIEW MORE
           </button>
         )}
       </div>
