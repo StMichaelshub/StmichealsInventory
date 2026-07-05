@@ -5,7 +5,7 @@ import Product from "@/models/Product";
 import { StockMovement } from "@/models/StockMovement";
 import { mongooseConnect } from "@/lib/mongodb";
 import { authMiddleware, isStaff } from "@/lib/auth-middleware";
-import { postCreditRecoveryEntry, postCreditSaleEntry } from "@/lib/accounting";
+import { postCreditRecoveryEntry, postCreditSaleEntry, postCreditStockReturnEntry } from "@/lib/accounting";
 import { reverseInventoryForRefund } from "@/lib/syncPackQty";
 
 function toMoney(value) {
@@ -419,6 +419,13 @@ export default async function handler(req, res) {
 
       if (transaction.creditCustomerId) {
         await recalculateCustomerBalance(transaction.creditCustomerId);
+      }
+
+      // Post accounting journal entry for the credit stock return
+      try {
+        await postCreditStockReturnEntry(transaction, validReturns);
+      } catch (accountingError) {
+        console.error("Accounting auto-post failed for credit stock return:", transaction._id, accountingError.message);
       }
 
       return res.status(200).json({

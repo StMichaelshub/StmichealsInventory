@@ -1210,10 +1210,10 @@ function ChartCard({ title, children, onViewMore }) {
         {onViewMore && (
           <button
             type="button"
-            className="btn-action-secondary !py-1.5 !px-3 text-xs"
+            className="text-sm font-bold text-gray-900"
             onClick={onViewMore}
           >
-            View More
+            VIEW MORE
           </button>
         )}
       </div>
