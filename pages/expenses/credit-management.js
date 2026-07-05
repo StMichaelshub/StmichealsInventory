@@ -2,7 +2,7 @@ import Layout from "@/components/Layout";
 import Loader from "@/components/Loader";
 import { formatCurrency } from "@/lib/format";
 import { useEffect, useMemo, useState } from "react";
-import { CreditCard, Plus, RefreshCw, Search, WalletCards } from "lucide-react";
+import { CreditCard, Package, Plus, RefreshCw, RotateCcw, Search, WalletCards, X } from "lucide-react";
 
 function todayKey() {
   const today = new Date();
@@ -38,6 +38,9 @@ export default function CreditManagement() {
   const [debtForm, setDebtForm] = useState({ customerId: "", amount: "", dueDate: "", reference: "", notes: "" });
   const [paymentForm, setPaymentForm] = useState({ transactionId: "", amount: "", tenderType: "", reference: "", notes: "", paidAt: todayKey() });
   const [tenders, setTenders] = useState([]);
+  const [reviewCredit, setReviewCredit] = useState(null);
+  const [returnItems, setReturnItems] = useState([]);
+  const [returnNotes, setReturnNotes] = useState("");
 
   const fetchTenders = async () => {
     try {
@@ -122,6 +125,66 @@ export default function CreditManagement() {
     event.preventDefault();
     const ok = await postAction({ action: "record-payment", ...paymentForm }, "Credit payment recorded.");
     if (ok) setPaymentForm({ transactionId: "", amount: "", tenderType: tenders[0]?.name || "", reference: "", notes: "", paidAt: todayKey() });
+  };
+
+  const openStockReview = (credit) => {
+    setReviewCredit(credit);
+    const items = (credit.items || []).map((item) => {
+      const originalQty = Number(item.qty || item.quantity || 0);
+      // Calculate already-returned qty for this item
+      const returned = (credit.creditReturnedItems || [])
+        .filter((ri) => (ri.productId && item.productId) ? String(ri.productId) === String(item.productId) : ri.name === item.name)
+        .reduce((sum, ri) => sum + Number(ri.qty || 0), 0);
+      const maxReturnable = Math.max(0, originalQty - returned);
+      return {
+        productId: item.productId || null,
+        name: item.name || "Unnamed item",
+        originalQty,
+        returnedQty: returned,
+        maxReturnable,
+        returnQty: 0,
+        price: Number(item.salePriceIncTax || item.price || 0),
+      };
+    });
+    setReturnItems(items);
+    setReturnNotes("");
+  };
+
+  const closeStockReview = () => {
+    setReviewCredit(null);
+    setReturnItems([]);
+    setReturnNotes("");
+  };
+
+  const updateReturnQty = (index, value) => {
+    setReturnItems((prev) => prev.map((item, i) =>
+      i === index ? { ...item, returnQty: Math.max(0, Math.min(Number(value) || 0, item.maxReturnable)) } : item
+    ));
+  };
+
+  const returnTotal = useMemo(() => {
+    return returnItems.reduce((sum, item) => sum + item.returnQty * item.price, 0);
+  }, [returnItems]);
+
+  const processStockReturn = async () => {
+    const itemsToReturn = returnItems.filter((item) => item.returnQty > 0);
+    if (itemsToReturn.length === 0) {
+      setMessage({ type: "error", text: "Select at least one item quantity to return." });
+      return;
+    }
+    const payload = {
+      action: "restore-stock",
+      transactionId: reviewCredit._id,
+      returnItems: itemsToReturn.map((item) => ({
+        productId: item.productId,
+        name: item.name,
+        qty: item.returnQty,
+        notes: returnNotes,
+      })),
+      notes: returnNotes,
+    };
+    const ok = await postAction(payload, "Stock restored successfully. Credit balance adjusted.");
+    if (ok) closeStockReview();
   };
 
   const selectedCredit = (data.credits || []).find((credit) => credit._id === paymentForm.transactionId);
@@ -251,6 +314,7 @@ export default function CreditManagement() {
                       <th className="text-right">Recovered</th>
                       <th className="text-right">Balance</th>
                       <th>Payments</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -268,6 +332,13 @@ export default function CreditManagement() {
                         <td className="text-sm text-gray-600">
                           {credit.creditPayments?.length ? credit.creditPayments.map((payment) => `#${payment.sequence || 1} ${formatCurrency(payment.amount || 0)}`).join(" · ") : "No recovery yet"}
                         </td>
+                        <td>
+                          {!["paid", "written_off"].includes(credit.creditStatus) && credit.items?.length > 0 && (
+                            <button onClick={() => openStockReview(credit)} className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
+                              <Package className="w-3.5 h-3.5" /> Review Stock
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -275,6 +346,140 @@ export default function CreditManagement() {
               </div>
             )}
           </div>
+
+          {/* Stock Review & Return Modal */}
+          {reviewCredit && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-xl">
+                <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-xl">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                      <RotateCcw className="w-5 h-5 text-blue-600" /> Review & Return Stock
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-0.5">
+                      {reviewCredit.customerName} · Balance: {formatCurrency(reviewCredit.creditBalance || 0)}
+                    </p>
+                  </div>
+                  <button onClick={closeStockReview} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"><X className="w-5 h-5" /></button>
+                </div>
+
+                <div className="px-6 py-4 space-y-5">
+                  {/* Credit Summary */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-center">
+                      <p className="text-xs text-blue-600 font-medium">Original</p>
+                      <p className="text-sm font-bold text-blue-800">{formatCurrency(reviewCredit.creditOriginalTotal || 0)}</p>
+                    </div>
+                    <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-center">
+                      <p className="text-xs text-emerald-600 font-medium">Paid</p>
+                      <p className="text-sm font-bold text-emerald-800">{formatCurrency(reviewCredit.creditPaidAmount || 0)}</p>
+                    </div>
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-center">
+                      <p className="text-xs text-amber-600 font-medium">Outstanding</p>
+                      <p className="text-sm font-bold text-amber-800">{formatCurrency(reviewCredit.creditBalance || 0)}</p>
+                    </div>
+                  </div>
+
+                  {/* Previously returned items */}
+                  {reviewCredit.creditReturnedItems?.length > 0 && (
+                    <div className="rounded-lg border border-gray-200 p-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-2">Previously Returned</h4>
+                      <div className="space-y-1">
+                        {reviewCredit.creditReturnedItems.map((ri, idx) => (
+                          <div key={idx} className="flex justify-between text-xs text-gray-600">
+                            <span>{ri.name} × {ri.qty}</span>
+                            <span>{formatCurrency(ri.qty * ri.price)} · {new Date(ri.returnedAt).toLocaleDateString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Items to return */}
+                  <div className="rounded-lg border border-gray-200">
+                    <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 rounded-t-lg">
+                      <h4 className="text-sm font-semibold text-gray-700">Credit Items — Select Quantities to Return to Stock</h4>
+                    </div>
+                    <div className="divide-y divide-gray-100">
+                      {returnItems.length === 0 ? (
+                        <div className="p-4 text-sm text-gray-500">No items with product IDs on this credit entry.</div>
+                      ) : (
+                        returnItems.map((item, index) => (
+                          <div key={index} className="flex items-center gap-3 px-4 py-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{item.name}</p>
+                              <p className="text-xs text-gray-500">
+                                Orig: {item.originalQty} · Returned: {item.returnedQty} · Available: {item.maxReturnable} · @ {formatCurrency(item.price)}/unit
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {item.maxReturnable > 0 ? (
+                                <>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={item.maxReturnable}
+                                    value={item.returnQty}
+                                    onChange={(e) => updateReturnQty(index, e.target.value)}
+                                    className="w-16 px-2 py-1 text-sm border border-gray-300 rounded-lg text-center"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => updateReturnQty(index, item.maxReturnable)}
+                                    className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                  >
+                                    All
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="text-xs text-gray-400 italic">Fully returned</span>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Return value summary */}
+                  {returnTotal > 0 && (
+                    <div className="rounded-lg bg-purple-50 border border-purple-200 p-4">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="text-sm font-semibold text-purple-800">Stock Return Value</p>
+                          <p className="text-xs text-purple-600 mt-0.5">This amount will be deducted from the credit balance</p>
+                        </div>
+                        <p className="text-lg font-bold text-purple-900">{formatCurrency(returnTotal)}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Notes */}
+                  <textarea
+                    placeholder="Return notes (optional)"
+                    value={returnNotes}
+                    onChange={(e) => setReturnNotes(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    rows={2}
+                  />
+                </div>
+
+                <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4 flex justify-end gap-3 rounded-b-xl">
+                  <button onClick={closeStockReview} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200">
+                    Cancel
+                  </button>
+                  <button
+                    onClick={processStockReturn}
+                    disabled={saving || returnTotal === 0}
+                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    {saving ? "Processing..." : `Restore Stock & Reduce Credit`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </Layout>

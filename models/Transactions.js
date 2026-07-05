@@ -83,6 +83,18 @@ const TransactionSchema = new mongoose.Schema({
     type: [creditPaymentSchema],
     default: [],
   },
+  creditReturnedItems: {
+    type: [{
+      productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", default: null },
+      name: { type: String, default: "" },
+      qty: { type: Number, default: 0 },
+      price: { type: Number, default: 0 },
+      returnedAt: { type: Date, default: Date.now },
+      returnedBy: { type: String, default: "" },
+      notes: { type: String, default: "" },
+    }],
+    default: [],
+  },
 
   // Attribution for sales influenced by external channels such as the online store
   salesChannel: { type: String, trim: true, default: "POS" },

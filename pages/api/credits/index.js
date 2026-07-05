@@ -1,9 +1,12 @@
 import mongoose from "mongoose";
 import Transaction from "@/models/Transactions";
 import Customer from "@/models/Customer";
+import Product from "@/models/Product";
+import { StockMovement } from "@/models/StockMovement";
 import { mongooseConnect } from "@/lib/mongodb";
 import { authMiddleware, isStaff } from "@/lib/auth-middleware";
 import { postCreditRecoveryEntry, postCreditSaleEntry } from "@/lib/accounting";
+import { reverseInventoryForRefund } from "@/lib/syncPackQty";
 
 function toMoney(value) {
   const number = Number(value || 0);
@@ -72,6 +75,8 @@ function serializeCredit(transaction, customerById = new Map()) {
     creditPaidAmount: paidAmount,
     creditBalance: balance,
     creditStatus: getCreditStatus(balance, paidAmount, transaction.creditStatus),
+    items: transaction.items || [],
+    creditReturnedItems: transaction.creditReturnedItems || [],
   };
 }
 
@@ -287,6 +292,143 @@ export default async function handler(req, res) {
       }
 
       return res.status(200).json({ success: true, transaction });
+    }
+
+    if (action === "restore-stock") {
+      const { transactionId, returnItems, notes } = req.body || {};
+      if (!transactionId || !mongoose.Types.ObjectId.isValid(String(transactionId))) {
+        return res.status(400).json({ success: false, message: "Valid transaction is required" });
+      }
+      if (!Array.isArray(returnItems) || returnItems.length === 0) {
+        return res.status(400).json({ success: false, message: "At least one item to return is required" });
+      }
+
+      const transaction = await Transaction.findById(transactionId);
+      if (!transaction) {
+        return res.status(404).json({ success: false, message: "Credit transaction not found" });
+      }
+      if (["paid", "written_off"].includes(transaction.creditStatus)) {
+        return res.status(400).json({ success: false, message: "Cannot restore stock on a settled or written-off credit" });
+      }
+
+      // Build a map of original items for validation
+      const originalItems = Array.isArray(transaction.items) ? transaction.items : [];
+      const alreadyReturned = Array.isArray(transaction.creditReturnedItems) ? transaction.creditReturnedItems : [];
+
+      // Calculate how much of each item has already been returned
+      const returnedQtyMap = new Map();
+      for (const ri of alreadyReturned) {
+        const key = String(ri.productId || ri.name);
+        returnedQtyMap.set(key, (returnedQtyMap.get(key) || 0) + Number(ri.qty || 0));
+      }
+
+      // Validate and prepare return items
+      const validReturns = [];
+      let returnValue = 0;
+
+      for (const returnItem of returnItems) {
+        const returnQty = Number(returnItem.qty || 0);
+        if (returnQty <= 0) continue;
+
+        // Find the matching original item
+        const original = originalItems.find((item) => {
+          if (returnItem.productId && item.productId) {
+            return String(item.productId) === String(returnItem.productId);
+          }
+          return item.name === returnItem.name;
+        });
+
+        if (!original) continue;
+
+        const originalQty = Number(original.qty || original.quantity || 0);
+        const key = String(original.productId || original.name);
+        const previouslyReturned = returnedQtyMap.get(key) || 0;
+        const maxReturnable = originalQty - previouslyReturned;
+        const actualReturnQty = Math.min(returnQty, maxReturnable);
+
+        if (actualReturnQty <= 0) continue;
+
+        const unitPrice = Number(original.salePriceIncTax || original.price || 0);
+        validReturns.push({
+          productId: original.productId || null,
+          name: original.name || "Unnamed item",
+          qty: actualReturnQty,
+          price: unitPrice,
+          returnedAt: new Date(),
+          returnedBy: req.user?.name || "Admin",
+          notes: returnItem.notes || notes || "",
+        });
+        returnValue += actualReturnQty * unitPrice;
+      }
+
+      if (validReturns.length === 0) {
+        return res.status(400).json({ success: false, message: "No valid items to return (quantities may already be fully returned)" });
+      }
+
+      // Restore stock for items that have productId (real inventory items)
+      const stockItems = validReturns.filter((item) => item.productId);
+      if (stockItems.length > 0) {
+        const mappedItems = stockItems.map((item) => ({
+          productId: String(item.productId),
+          qty: item.qty,
+          revenue: item.qty * item.price,
+        }));
+        await reverseInventoryForRefund(mappedItems);
+      }
+
+      // Record stock movement for audit trail
+      if (stockItems.length > 0) {
+        const transRef = `CR-RTN-${transaction._id.toString().slice(-6).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+        await StockMovement.create({
+          transRef,
+          reason: "Restock",
+          status: "Received",
+          staffId: req.user?._id || null,
+          notes: `Credit stock return for ${transaction.creditCustomerName || "credit customer"}. Credit ID: ${transaction._id}. ${notes || ""}`.trim(),
+          products: stockItems.map((item) => ({
+            productId: item.productId,
+            quantity: item.qty,
+            costPrice: item.price,
+            notes: `Returned from credit - ${item.name}`,
+          })),
+          totalCostPrice: stockItems.reduce((sum, item) => sum + item.qty * item.price, 0),
+          dateSent: new Date(),
+          dateReceived: new Date(),
+        });
+      }
+
+      // Update transaction: reduce balance by returned value, track returned items
+      const currentReturnedItems = Array.isArray(transaction.creditReturnedItems) ? transaction.creditReturnedItems : [];
+      transaction.creditReturnedItems = [...currentReturnedItems, ...validReturns];
+
+      // Reduce the credit balance and original total by the returned value
+      const returnedTotal = toMoney(returnValue);
+      const newOriginalTotal = toMoney(Math.max(0, (transaction.creditOriginalTotal || transaction.total || 0) - returnedTotal));
+      const paidAmount = getPaymentTotal(transaction);
+      const newBalance = Math.max(0, toMoney(newOriginalTotal - paidAmount));
+
+      transaction.creditOriginalTotal = newOriginalTotal;
+      transaction.creditBalance = newBalance;
+      transaction.creditStatus = getCreditStatus(newBalance, paidAmount, transaction.creditStatus);
+      if (transaction.creditStatus === "paid") {
+        transaction.creditPaidAt = new Date();
+      }
+      transaction.creditNotes = `${transaction.creditNotes || ""}\n[Stock Return] ${validReturns.map((i) => `${i.name} x${i.qty}`).join(", ")} restored on ${new Date().toLocaleDateString()}`.trim();
+
+      await transaction.save();
+
+      if (transaction.creditCustomerId) {
+        await recalculateCustomerBalance(transaction.creditCustomerId);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `${validReturns.length} item(s) restored to stock. Credit reduced by ${returnedTotal.toFixed(2)}.`,
+        returnedItems: validReturns,
+        newBalance,
+        newOriginalTotal,
+        transaction,
+      });
     }
 
     return res.status(400).json({ success: false, message: "Unknown credit action" });
