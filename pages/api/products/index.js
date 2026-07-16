@@ -259,10 +259,13 @@ export default async function handler(req, res) {
       }
 
       if (id) {
+        // Direct ID lookups return the product regardless of archive status
+        // so POs, stock movements, and transactions can always resolve references.
+        // Use ?archived=false to explicitly exclude archived products.
         const idFilter = {};
         if (archived === "true") idFilter.isArchived = true;
-        if (archived === "false") idFilter.isArchived = false;
-        if (archived !== "true" && archived !== "false") idFilter.isArchived = { $ne: true };
+        else if (archived === "false") idFilter.isArchived = false;
+        // else: no archive filter — return product whatever its archive state
 
         const product = await Product.findOne({ _id: id, ...idFilter });
         if (!product) {

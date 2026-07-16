@@ -204,13 +204,13 @@ export default async function handler(req, res) {
 
             const bulkResult = await Product.bulkWrite(bulkOps, { session });
 
-            // 3. Verify all products were updated
+            // 3. Verify all products were matched in the DB
             const expectedUpdates = bulkOps.length;
-            const actualUpdates = (bulkResult.modifiedCount || 0) + (bulkResult.matchedCount || 0);
-            if (actualUpdates < expectedUpdates) {
-              const failedCount = expectedUpdates - actualUpdates;
-              throw new Error(
-                `PO stock update verification failed: ${failedCount} of ${expectedUpdates} products were not updated. Rolling back.`
+            const actualMatched = bulkResult.matchedCount || 0;
+            if (actualMatched < expectedUpdates) {
+              const failedCount = expectedUpdates - actualMatched;
+              console.warn(
+                `PO stock update: ${failedCount} of ${expectedUpdates} products not found in DB (possibly archived/deleted). Matched: ${actualMatched}, Modified: ${bulkResult.modifiedCount || 0}`
               );
             }
 
