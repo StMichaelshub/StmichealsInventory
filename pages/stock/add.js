@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/router";
 import Layout from "@/components/Layout";
 import { formatCurrency } from "@/lib/format";
@@ -23,14 +23,14 @@ export default function StockMovementAdd() {
   const [reason, setReason] = useState("");
   const [movementNotes, setMovementNotes] = useState("");
 
-  const [products, setProducts] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [quantityInput, setQuantityInput] = useState(1);
   const [expiryDateInput, setExpiryDateInput] = useState("");
   const [addedProducts, setAddedProducts] = useState([]);
   
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [loadingSearch, setLoadingSearch] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [poRef, setPoRef] = useState(null);
   const [poLoading, setPoLoading] = useState(false);
   const [unmatchedProducts, setUnmatchedProducts] = useState([]);
@@ -181,35 +181,33 @@ export default function StockMovementAdd() {
     }
   }, [isOperationalLoss]);
 
+  // Load all stock-managed parent/main products once on mount for instant client-side search
   useEffect(() => {
-    const delayDebounce = setTimeout(() => {
-      const trimmed = searchTerm.trim();
-      if (trimmed.length >= 2) {
-        setLoadingSearch(true);
-        fetch(`/api/products?search=${encodeURIComponent(trimmed)}&stockManaged=true&excludeChild=true`)
-          .then((res) => res.json())
-          .then(data => {
-            const productList = data.data || (Array.isArray(data) ? data : []);
-            setProducts(Array.isArray(productList) ? productList : []);
-          })
-          .catch(err => {
-            console.error("Error searching products:", err);
-            setProducts([]);
-          })
-          .finally(() => setLoadingSearch(false));
-      } else {
-        setProducts([]);
-        setLoadingSearch(false);
-      }
-    }, 500);
+    setLoadingProducts(true);
+    apiClient.get("/api/products?stockManaged=true&limit=500")
+      .then((res) => {
+        const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+        // Only keep parent products and main products (no child units)
+        const parentAndMain = list.filter((p) => !p.isChildProduct || p.packType === "pack");
+        setAllProducts(parentAndMain);
+      })
+      .catch((err) => console.error("Error fetching products:", err))
+      .finally(() => setLoadingProducts(false));
+  }, []);
 
-    return () => clearTimeout(delayDebounce);
-  }, [searchTerm]);
+  // Client-side search filter — instant, no debounce, no server round-trip
+  const filteredProducts = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (query.length < 2) return [];
+    return allProducts.filter((p) =>
+      (p.name || "").toLowerCase().includes(query) ||
+      (p.barcode || "").toLowerCase().includes(query)
+    );
+  }, [searchTerm, allProducts]);
 
   const handleProductSelect = (product) => {
     setSelectedProduct(product);
-    setSearchTerm(""); // Clear search term to close dropdown without triggering search
-    setProducts([]);
+    setSearchTerm("");
   };
 
   const updateProductQuantity = (productId, newQuantity) => {
@@ -515,14 +513,14 @@ export default function StockMovementAdd() {
                     setSelectedProduct(null);
                   }}
                 />
-                {loadingSearch && (
+                {loadingProducts && searchTerm.trim().length >= 2 && (
                   <div className="absolute top-full mt-1 left-0 w-full bg-white border border-gray-200 rounded-lg p-4 shadow-lg z-20">
-                    <Loader size="sm" text="Searching..." />
+                    <Loader size="sm" text="Loading products..." />
                   </div>
                 )}
-                {!loadingSearch && products.length > 0 && (
+                {!loadingProducts && filteredProducts.length > 0 && (
                   <ul className="absolute top-full mt-1 left-0 z-20 bg-white border border-gray-200 w-full max-h-64 overflow-y-auto rounded-lg shadow-lg">
-                    {products.map((product) => (
+                    {filteredProducts.map((product) => (
                       <li
                         key={product._id}
                         className="px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 transition"
