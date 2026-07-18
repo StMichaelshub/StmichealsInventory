@@ -283,10 +283,17 @@ export default async function handler(req, res) {
       else filter.isArchived = { $ne: true };
 
       if (search) {
-        filter.$or = [
-          { name: { $regex: search, $options: "i" } },
-          { barcode: { $regex: search, $options: "i" } },
-        ];
+        // Escape regex special chars so the search is a literal substring match
+        const escaped = String(search).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const searchCondition = {
+          $or: [
+            { name: { $regex: escaped, $options: "i" } },
+            { barcode: { $regex: escaped, $options: "i" } },
+          ],
+        };
+
+        if (!filter.$and) filter.$and = [];
+        filter.$and.push(searchCondition);
       }
 
       if (expired === "true") filter.isExpired = true;
@@ -295,21 +302,14 @@ export default async function handler(req, res) {
       if (stockManaged === "false") filter.isStockManaged = false;
       if (excludeChild === "true") {
         // Exclude true derived children (unit from pack), not pack products
-        const childCondition = [
-          { isChildProduct: { $ne: true } },
-          { isChildProduct: true, packType: "pack" },
-        ];
-        if (filter.$or) {
-          // search $or already set — combine both with $and so neither is lost
-          const searchCondition = filter.$or;
-          delete filter.$or;
-          filter.$and = [
-            { $or: searchCondition },
-            { $or: childCondition },
-          ];
-        } else {
-          filter.$or = childCondition;
-        }
+        const childCondition = {
+          $or: [
+            { isChildProduct: { $ne: true } },
+            { isChildProduct: true, packType: "pack" },
+          ],
+        };
+        if (!filter.$and) filter.$and = [];
+        filter.$and.push(childCondition);
       }
 
       // Minimal mode for stock management - only essential fields
@@ -356,8 +356,13 @@ export default async function handler(req, res) {
       res.setHeader('X-Total-Pages', Math.ceil(total / limit));
 
       await deriveChildQuantities(products);
-      
-      res.setHeader("Cache-Control", "public, s-maxage=30, stale-while-revalidate=120");
+
+      // Don't cache search queries — results change per search term
+      if (search) {
+        res.setHeader("Cache-Control", "private, no-store");
+      } else {
+        res.setHeader("Cache-Control", "public, s-maxage=30, stale-while-revalidate=120");
+      }
       return res.json({ success: true, data: products, total });
     }
 
