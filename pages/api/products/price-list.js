@@ -20,16 +20,6 @@ const FONT_CANDIDATES = {
   ],
 };
 
-const GOOGLE_FONT_URLS = {
-  regular: "https://fonts.gstatic.com/s/roboto/v30/KFOmCnqEu92Fr1Mu4mxM.ttf",
-  bold: "https://fonts.gstatic.com/s/roboto/v30/KFOlCnqEu92Fr1MmWUlvAw.ttf",
-};
-
-const GOOGLE_FONT_CACHE = {
-  regular: null,
-  bold: null,
-};
-
 function sanitizeFilename(value = "price-list") {
   return String(value)
     .toLowerCase()
@@ -67,69 +57,46 @@ async function resolveFontPath(candidates = []) {
   return null;
 }
 
-async function loadGoogleFontBuffer(kind) {
-  if (GOOGLE_FONT_CACHE[kind]) {
-    return GOOGLE_FONT_CACHE[kind];
-  }
-
-  const url = GOOGLE_FONT_URLS[kind];
-  if (!url) return null;
-
-  try {
-    const response = await fetch(url);
-    if (!response.ok) return null;
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    GOOGLE_FONT_CACHE[kind] = buffer;
-    return buffer;
-  } catch {
-    return null;
-  }
-}
-
 async function registerPdfFonts(doc) {
-  let regularName = "";
-  let boldName = "";
+  let regularName = "Helvetica";
+  let boldName = "Helvetica-Bold";
 
-  const googleRegular = await loadGoogleFontBuffer("regular");
-  if (googleRegular) {
-    doc.registerFont("RobotoRegular", googleRegular);
-    regularName = "RobotoRegular";
+  const regularPath = await resolveFontPath(FONT_CANDIDATES.regular);
+  if (regularPath) {
+    doc.registerFont("FallbackRegular", regularPath);
+    regularName = "FallbackRegular";
   }
 
-  const googleBold = await loadGoogleFontBuffer("bold");
-  if (googleBold) {
-    doc.registerFont("RobotoBold", googleBold);
-    boldName = "RobotoBold";
-  }
-
-  if (!regularName) {
-    const regularPath = await resolveFontPath(FONT_CANDIDATES.regular);
-    if (regularPath) {
-      doc.registerFont("FallbackRegular", regularPath);
-      regularName = "FallbackRegular";
-    }
-  }
-
-  if (!boldName) {
-    const boldPath = await resolveFontPath(FONT_CANDIDATES.bold);
-    if (boldPath) {
-      doc.registerFont("FallbackBold", boldPath);
-      boldName = "FallbackBold";
-    }
-  }
-
-  if (!regularName) {
-    throw new Error("No compatible Unicode regular font available for PDF generation");
-  }
-  if (!boldName) {
-    boldName = regularName;
+  const boldPath = await resolveFontPath(FONT_CANDIDATES.bold);
+  if (boldPath) {
+    doc.registerFont("FallbackBold", boldPath);
+    boldName = "FallbackBold";
+  } else if (regularPath) {
+    boldName = "FallbackRegular";
   }
 
   return {
     regular: regularName,
     bold: boldName,
   };
+}
+
+function drawNairaVectorSymbol(doc, { x, y, width, height, color }) {
+  const scaleX = width / 500;
+  const scaleY = height / 600;
+
+  doc.save();
+  doc.translate(x, y);
+  doc.scale(scaleX, scaleY);
+  doc.fillColor(color);
+
+  doc.rect(80, 80, 55, 440).fill();
+  doc.rect(365, 80, 55, 440).fill();
+  doc.polygon([80, 140], [365, 490], [420, 490], [135, 140]).fill();
+  doc.rect(40, 220, 420, 35).fill();
+  doc.rect(40, 315, 420, 35).fill();
+
+  doc.restore();
 }
 
 function drawNairaAmountRight(doc, {
@@ -146,13 +113,20 @@ function drawNairaAmountRight(doc, {
 
   const rightEdge = x + width;
   const numberWidth = doc.widthOfString(numericText);
-  const symbolText = "₦";
-  const symbolWidth = doc.widthOfString(symbolText);
+  const symbolHeight = Math.max(9.5, fontSize * 1.05);
+  const symbolWidth = symbolHeight * (500 / 600);
   const gap = 2;
   const numberX = rightEdge - numberWidth;
   const symbolX = numberX - gap - symbolWidth;
 
-  doc.text(symbolText, symbolX, y, { lineBreak: false });
+  drawNairaVectorSymbol(doc, {
+    x: symbolX,
+    y: y + (fontSize * 0.04),
+    width: symbolWidth,
+    height: symbolHeight,
+    color,
+  });
+
   doc.text(numericText, numberX, y, { lineBreak: false });
 }
 
