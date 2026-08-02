@@ -179,7 +179,7 @@ export default async function handler(req, res) {
       ? await Customer.findById(transaction.creditCustomerId).lean()
       : null;
 
-    const companyName = store?.companyName || store?.companyDisplayName || store?.storeName || "Business";
+    const companyName = "St's Michael Warehouse";
     const currency = store?.currency || "NGN";
     const items = Array.isArray(transaction.items) ? transaction.items : [];
     const payments = Array.isArray(transaction.creditPayments) ? transaction.creditPayments : [];

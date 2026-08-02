@@ -22,6 +22,13 @@ function formatCurrency(value) {
   })}`;
 }
 
+function toDisplayTitle(value = "") {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/(^|[\s/(-])([a-z])/g, (match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
+}
+
 async function loadLogoBuffer(logoUrl = "") {
   const trimmed = String(logoUrl || "").trim();
   if (!trimmed) return null;
@@ -70,7 +77,7 @@ export default async function handler(req, res) {
   try {
     await mongooseConnect();
 
-    const title = String(req.body?.title || "Product Price List").trim() || "Product Price List";
+    const title = "Product Price List";
     const products = Array.isArray(req.body?.products) ? req.body.products : [];
 
     if (products.length === 0) {
@@ -78,9 +85,8 @@ export default async function handler(req, res) {
     }
 
     const store = await Store.findOne({}).lean();
-    const companyName = store?.companyName || store?.companyDisplayName || store?.storeName || "Business";
+    const companyName = "St's Michael Warehouse";
     const businessMeta = [store?.storePhone, store?.email, store?.website].filter(Boolean).join(" | ");
-    const generatedAt = new Date().toLocaleString();
     const logoBuffer = await loadLogoBuffer(store?.logo || "");
 
     const filename = `${sanitizeFilename(companyName)}-${sanitizeFilename(title)}.pdf`;
@@ -107,7 +113,7 @@ export default async function handler(req, res) {
       .font("Helvetica-Bold")
       .fontSize(20)
       .fillColor("#0F172A")
-      .text(companyName, 118, 50, { width: 260 });
+      .text(companyName, 118, 50, { width: 320 });
 
     doc
       .font("Helvetica")
@@ -119,13 +125,7 @@ export default async function handler(req, res) {
       .font("Helvetica-Bold")
       .fontSize(16)
       .fillColor("#1D4ED8")
-      .text(title, 350, 54, { width: 190, align: "right" });
-
-    doc
-      .font("Helvetica")
-      .fontSize(9)
-      .fillColor("#475569")
-      .text(`Generated: ${generatedAt}`, 350, 80, { width: 190, align: "right" });
+      .text(title, 360, 61, { width: 180, align: "right" });
 
     let y = 138;
 
@@ -134,11 +134,8 @@ export default async function handler(req, res) {
       .fontSize(10)
       .fillColor("#1E3A8A")
       .text("#", 40, y)
-      .text("Product", 65, y)
-      .text("Category", 255, y)
-      .text("Barcode", 360, y)
-      .text("Location", 435, y)
-      .text("Price", 492, y, { width: 56, align: "right" });
+      .text("Product", 75, y)
+      .text("Price", 420, y, { width: 120, align: "right" });
 
     doc
       .moveTo(40, y + 14)
@@ -150,17 +147,11 @@ export default async function handler(req, res) {
     y += 24;
 
     products.forEach((product, index) => {
-      const rowTop = y;
-      const productName = String(product.name || "");
-      const categoryLabel = String(product.categoryLabel || "Uncategorized");
-      const barcode = String(product.barcode || "-");
-      const locationLabel = String(product.locations || "Unassigned");
+      const productName = toDisplayTitle(product.name || "");
       const priceLabel = formatCurrency(product.salePriceIncTax || 0);
 
       const rowHeight = Math.max(
-        doc.heightOfString(productName, { width: 180 }),
-        doc.heightOfString(categoryLabel, { width: 95 }),
-        doc.heightOfString(locationLabel, { width: 48 }),
+        doc.heightOfString(productName, { width: 320 }),
         14
       );
 
@@ -172,11 +163,8 @@ export default async function handler(req, res) {
           .fontSize(10)
           .fillColor("#1E3A8A")
           .text("#", 40, y)
-          .text("Product", 65, y)
-          .text("Category", 255, y)
-          .text("Barcode", 360, y)
-          .text("Location", 435, y)
-          .text("Price", 492, y, { width: 56, align: "right" });
+          .text("Product", 75, y)
+          .text("Price", 420, y, { width: 120, align: "right" });
         doc
           .moveTo(40, y + 14)
           .lineTo(555, y + 14)
@@ -191,11 +179,8 @@ export default async function handler(req, res) {
         .fontSize(9.5)
         .fillColor("#0F172A")
         .text(String(index + 1), 40, y)
-        .text(productName, 65, y, { width: 180 })
-        .text(categoryLabel, 255, y, { width: 95 })
-        .text(barcode, 360, y, { width: 65 })
-        .text(locationLabel, 435, y, { width: 48 })
-        .text(priceLabel, 492, y, { width: 56, align: "right" });
+        .text(productName, 75, y, { width: 320 })
+        .text(priceLabel, 420, y, { width: 120, align: "right" });
 
       y += rowHeight + 8;
 
