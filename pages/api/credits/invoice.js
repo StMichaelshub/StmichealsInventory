@@ -88,24 +88,6 @@ async function registerPdfFonts(doc) {
   };
 }
 
-function drawNairaVectorSymbol(doc, { x, y, width, height, color }) {
-  const scaleX = width / 500;
-  const scaleY = height / 600;
-
-  doc.save();
-  doc.translate(x, y);
-  doc.scale(scaleX, scaleY);
-  doc.fillColor(color);
-
-  doc.rect(80, 80, 55, 440).fill();
-  doc.rect(365, 80, 55, 440).fill();
-  doc.polygon([80, 140], [365, 490], [420, 490], [135, 140]).fill();
-  doc.rect(40, 220, 420, 35).fill();
-  doc.rect(40, 315, 420, 35).fill();
-
-  doc.restore();
-}
-
 function drawNairaAmountRight(doc, {
   amount,
   x,
@@ -124,25 +106,7 @@ function drawNairaAmountRight(doc, {
     return;
   }
 
-  const rightEdge = x + width;
-  const numberWidth = doc.widthOfString(textValue);
-  const lineHeight = doc.currentLineHeight();
-  const symbolHeight = Math.max(8.2, lineHeight * 0.72);
-  const symbolWidth = symbolHeight * (500 / 600);
-  const gap = 3;
-  const numberX = rightEdge - numberWidth;
-  const symbolX = numberX - gap - symbolWidth;
-  const symbolY = y + ((lineHeight - symbolHeight) / 2) + 0.2;
-
-  drawNairaVectorSymbol(doc, {
-    x: symbolX,
-    y: symbolY,
-    width: symbolWidth,
-    height: symbolHeight,
-    color,
-  });
-
-  doc.text(textValue, numberX, y, { lineBreak: false });
+  doc.text(`N${textValue}`, x, y, { width, align: "right" });
 }
 
 async function loadLogoBuffer(logoUrl = "") {
