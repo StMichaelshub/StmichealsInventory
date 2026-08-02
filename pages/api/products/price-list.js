@@ -113,15 +113,17 @@ function drawNairaAmountRight(doc, {
 
   const rightEdge = x + width;
   const numberWidth = doc.widthOfString(numericText);
-  const symbolHeight = Math.max(9.5, fontSize * 1.05);
+  const lineHeight = doc.currentLineHeight();
+  const symbolHeight = Math.max(8.2, lineHeight * 0.72);
   const symbolWidth = symbolHeight * (500 / 600);
-  const gap = 2;
+  const gap = 3;
   const numberX = rightEdge - numberWidth;
   const symbolX = numberX - gap - symbolWidth;
+  const symbolY = y + ((lineHeight - symbolHeight) / 2) + 0.2;
 
   drawNairaVectorSymbol(doc, {
     x: symbolX,
-    y: y + (fontSize * 0.04),
+    y: symbolY,
     width: symbolWidth,
     height: symbolHeight,
     color,
