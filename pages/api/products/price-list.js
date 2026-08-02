@@ -31,10 +31,10 @@ function sanitizeFilename(value = "price-list") {
 function formatCurrency(value) {
   const number = Number(value || 0);
   const safeValue = Number.isFinite(number) ? number : 0;
-  return `₦${safeValue.toLocaleString("en-NG", {
+  return safeValue.toLocaleString("en-NG", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}`;
+  });
 }
 
 function toDisplayTitle(value = "") {
@@ -72,6 +72,46 @@ async function registerPdfFonts(doc) {
     regular: regularPath ? "AppRegular" : "Helvetica",
     bold: boldPath ? "AppBold" : "Helvetica-Bold",
   };
+}
+
+function drawNairaAmountRight(doc, {
+  amount,
+  x,
+  y,
+  width,
+  font,
+  fontSize,
+  color,
+}) {
+  const numericText = formatCurrency(amount);
+  doc.font(font).fontSize(fontSize).fillColor(color);
+
+  const rightEdge = x + width;
+  const numberWidth = doc.widthOfString(numericText);
+  const symbolText = "N";
+  const symbolWidth = doc.widthOfString(symbolText);
+  const gap = 2;
+  const numberX = rightEdge - numberWidth;
+  const symbolX = numberX - gap - symbolWidth;
+
+  doc.text(symbolText, symbolX, y, { lineBreak: false });
+
+  const lineYTop = y + (fontSize * 0.52);
+  const lineYBottom = y + (fontSize * 0.7);
+  doc
+    .moveTo(symbolX + 0.5, lineYTop)
+    .lineTo(symbolX + symbolWidth - 0.5, lineYTop)
+    .strokeColor(color)
+    .lineWidth(0.8)
+    .stroke();
+  doc
+    .moveTo(symbolX + 0.5, lineYBottom)
+    .lineTo(symbolX + symbolWidth - 0.5, lineYBottom)
+    .strokeColor(color)
+    .lineWidth(0.8)
+    .stroke();
+
+  doc.font(font).fontSize(fontSize).fillColor(color).text(numericText, numberX, y, { lineBreak: false });
 }
 
 async function loadLogoBuffer(logoUrl = "") {
@@ -194,7 +234,7 @@ export default async function handler(req, res) {
 
     products.forEach((product, index) => {
       const productName = toDisplayTitle(product.name || "");
-      const priceLabel = formatCurrency(product.salePriceIncTax || 0);
+      const priceValue = Number(product.salePriceIncTax || 0);
 
       const rowHeight = Math.max(
         doc.heightOfString(productName, { width: 320 }),
@@ -225,8 +265,17 @@ export default async function handler(req, res) {
         .fontSize(9.5)
         .fillColor("#0F172A")
         .text(String(index + 1), 40, y)
-        .text(productName, 75, y, { width: 320 })
-        .text(priceLabel, 420, y, { width: 120, align: "right" });
+        .text(productName, 75, y, { width: 320 });
+
+      drawNairaAmountRight(doc, {
+        amount: priceValue,
+        x: 420,
+        y,
+        width: 120,
+        font: fonts.regular,
+        fontSize: 9.5,
+        color: "#0F172A",
+      });
 
       y += rowHeight + 8;
 

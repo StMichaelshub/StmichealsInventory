@@ -33,7 +33,7 @@ function formatCurrency(value, currency = "NGN") {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-  return currency === "NGN" ? `₦${formatted}` : `${currency} ${formatted}`;
+  return currency === "NGN" ? formatted : `${currency} ${formatted}`;
 }
 
 function formatDate(value) {
@@ -79,6 +79,52 @@ async function registerPdfFonts(doc) {
     regular: regularPath ? "AppRegular" : "Helvetica",
     bold: boldPath ? "AppBold" : "Helvetica-Bold",
   };
+}
+
+function drawNairaAmountRight(doc, {
+  amount,
+  x,
+  y,
+  width,
+  font,
+  fontSize,
+  color,
+  currency = "NGN",
+}) {
+  const textValue = formatCurrency(amount, currency);
+  doc.font(font).fontSize(fontSize).fillColor(color);
+
+  if (currency !== "NGN") {
+    doc.text(textValue, x, y, { width, align: "right" });
+    return;
+  }
+
+  const rightEdge = x + width;
+  const numberWidth = doc.widthOfString(textValue);
+  const symbolText = "N";
+  const symbolWidth = doc.widthOfString(symbolText);
+  const gap = 2;
+  const numberX = rightEdge - numberWidth;
+  const symbolX = numberX - gap - symbolWidth;
+
+  doc.text(symbolText, symbolX, y, { lineBreak: false });
+
+  const lineYTop = y + (fontSize * 0.52);
+  const lineYBottom = y + (fontSize * 0.7);
+  doc
+    .moveTo(symbolX + 0.5, lineYTop)
+    .lineTo(symbolX + symbolWidth - 0.5, lineYTop)
+    .strokeColor(color)
+    .lineWidth(0.8)
+    .stroke();
+  doc
+    .moveTo(symbolX + 0.5, lineYBottom)
+    .lineTo(symbolX + symbolWidth - 0.5, lineYBottom)
+    .strokeColor(color)
+    .lineWidth(0.8)
+    .stroke();
+
+  doc.font(font).fontSize(fontSize).fillColor(color).text(textValue, numberX, y, { lineBreak: false });
 }
 
 async function loadLogoBuffer(logoUrl = "") {
@@ -419,8 +465,30 @@ export default async function handler(req, res) {
         .text(String(index + 1), 40, y)
         .text(itemName, 68, y, { width: 220 })
         .text(String(qty), 300, y, { width: 40, align: "right" })
-        .text(formatCurrency(unitPrice, currency), 355, y, { width: 90, align: "right" })
-        .text(formatCurrency(lineTotal, currency), 455, y, { width: 100, align: "right" });
+        .text("", 355, y, { width: 90, align: "right" })
+        .text("", 455, y, { width: 100, align: "right" });
+
+      drawNairaAmountRight(doc, {
+        amount: unitPrice,
+        x: 355,
+        y,
+        width: 90,
+        font: fonts.regular,
+        fontSize: 10,
+        color: "#0F172A",
+        currency,
+      });
+
+      drawNairaAmountRight(doc, {
+        amount: lineTotal,
+        x: 455,
+        y,
+        width: 100,
+        font: fonts.regular,
+        fontSize: 10,
+        color: "#0F172A",
+        currency,
+      });
 
       y += rowHeight + 4;
     });
@@ -438,21 +506,54 @@ export default async function handler(req, res) {
       .font(fonts.regular)
       .fontSize(10)
       .fillColor("#0F172A")
-      .text("Original Amount", 355, y, { width: 90, align: "right" })
-      .text(formatCurrency(total, currency), 455, y, { width: 100, align: "right" });
+      .text("Original Amount", 355, y, { width: 90, align: "right" });
+
+    drawNairaAmountRight(doc, {
+      amount: total,
+      x: 455,
+      y,
+      width: 100,
+      font: fonts.regular,
+      fontSize: 10,
+      color: "#0F172A",
+      currency,
+    });
 
     y += 16;
     doc
-      .text("Recovered", 355, y, { width: 90, align: "right" })
-      .text(formatCurrency(recovered, currency), 455, y, { width: 100, align: "right" });
+      .font(fonts.regular)
+      .fontSize(10)
+      .fillColor("#0F172A")
+      .text("Recovered", 355, y, { width: 90, align: "right" });
+
+    drawNairaAmountRight(doc, {
+      amount: recovered,
+      x: 455,
+      y,
+      width: 100,
+      font: fonts.regular,
+      fontSize: 10,
+      color: "#0F172A",
+      currency,
+    });
 
     y += 16;
     doc
       .font(fonts.bold)
       .fontSize(11)
       .fillColor("#92400E")
-      .text("Outstanding", 355, y, { width: 90, align: "right" })
-      .text(formatCurrency(balance, currency), 455, y, { width: 100, align: "right" });
+      .text("Outstanding", 355, y, { width: 90, align: "right" });
+
+    drawNairaAmountRight(doc, {
+      amount: balance,
+      x: 455,
+      y,
+      width: 100,
+      font: fonts.bold,
+      fontSize: 11,
+      color: "#92400E",
+      currency,
+    });
 
     y += 28;
     y = ensureSpace(doc, y, payments.length > 0 ? (payments.length * 18) + 44 : 54);
@@ -481,8 +582,18 @@ export default async function handler(req, res) {
           .text(`#${payment.sequence || index + 1}`, 40, y)
           .text(formatDate(payment.paidAt), 88, y, { width: 170 })
           .text(payment.tenderType || payment.tenderName || "-", 268, y, { width: 80 })
-          .text(payment.reference || "-", 356, y, { width: 110 })
-          .text(formatCurrency(payment.amount || 0, currency), 455, y, { width: 100, align: "right" });
+          .text(payment.reference || "-", 356, y, { width: 110 });
+
+        drawNairaAmountRight(doc, {
+          amount: payment.amount || 0,
+          x: 455,
+          y,
+          width: 100,
+          font: fonts.regular,
+          fontSize: 10,
+          color: "#0F172A",
+          currency,
+        });
 
         y += 16;
       });
