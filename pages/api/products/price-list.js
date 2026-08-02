@@ -7,14 +7,14 @@ import Store from "@/models/Store";
 
 const FONT_CANDIDATES = {
   regular: [
-    "C:/Windows/Fonts/arial.ttf",
     "C:/Windows/Fonts/segoeui.ttf",
+    "C:/Windows/Fonts/arial.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
   ],
   bold: [
-    "C:/Windows/Fonts/arialbd.ttf",
     "C:/Windows/Fonts/segoeuib.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
   ],
@@ -88,41 +88,14 @@ function drawNairaAmountRight(doc, {
 
   const rightEdge = x + width;
   const numberWidth = doc.widthOfString(numericText);
-  const symbolWidth = Math.max(7, fontSize * 0.82);
-  const symbolHeight = Math.max(9, fontSize * 1.02);
+  const symbolText = "₦";
+  const symbolWidth = doc.widthOfString(symbolText);
   const gap = 2;
   const numberX = rightEdge - numberWidth;
   const symbolX = numberX - gap - symbolWidth;
 
-  const topY = y + (fontSize * 0.12);
-  const bottomY = topY + symbolHeight;
-  const leftX = symbolX;
-  const rightX = symbolX + symbolWidth;
-  const midUpper = topY + (symbolHeight * 0.42);
-  const midLower = topY + (symbolHeight * 0.62);
-
-  doc
-    .moveTo(leftX, bottomY)
-    .lineTo(leftX, topY)
-    .lineTo(rightX, bottomY)
-    .lineTo(rightX, topY)
-    .strokeColor(color)
-    .lineWidth(1.1)
-    .stroke();
-  doc
-    .moveTo(leftX - 0.2, midUpper)
-    .lineTo(rightX + 0.2, midUpper)
-    .strokeColor(color)
-    .lineWidth(0.9)
-    .stroke();
-  doc
-    .moveTo(leftX - 0.2, midLower)
-    .lineTo(rightX + 0.2, midLower)
-    .strokeColor(color)
-    .lineWidth(0.9)
-    .stroke();
-
-  doc.font(font).fontSize(fontSize).fillColor(color).text(numericText, numberX, y, { lineBreak: false });
+  doc.text(symbolText, symbolX, y, { lineBreak: false });
+  doc.text(numericText, numberX, y, { lineBreak: false });
 }
 
 async function loadLogoBuffer(logoUrl = "") {

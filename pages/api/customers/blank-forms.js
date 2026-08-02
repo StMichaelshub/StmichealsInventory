@@ -20,12 +20,6 @@ const FONT_CANDIDATES = {
   ],
 };
 
-function clampInteger(value, min, max, fallback) {
-  const parsed = Number.parseInt(String(value || ""), 10);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, parsed));
-}
-
 async function resolveFontPath(candidates = []) {
   for (const candidate of candidates) {
     try {
@@ -101,20 +95,6 @@ function drawLineField(doc, { label, x, y, width, fonts }) {
     .stroke();
 }
 
-function drawCheckBox(doc, { label, x, y, fonts }) {
-  doc
-    .rect(x, y, 8, 8)
-    .strokeColor("#64748B")
-    .lineWidth(0.8)
-    .stroke();
-
-  doc
-    .font(fonts.regular)
-    .fontSize(8)
-    .fillColor("#334155")
-    .text(label, x + 12, y - 1, { lineBreak: false });
-}
-
 function drawCustomerFormCard(doc, { x, y, width, height, fonts, companyName, serial }) {
   doc
     .roundedRect(x, y, width, height, 8)
@@ -124,7 +104,7 @@ function drawCustomerFormCard(doc, { x, y, width, height, fonts, companyName, se
 
   doc
     .font(fonts.bold)
-    .fontSize(10)
+    .fontSize(8.5)
     .fillColor("#0F172A")
     .text(`${companyName} - Customer Intake Form`, x + 10, y + 8, { width: width - 20 });
 
@@ -134,26 +114,11 @@ function drawCustomerFormCard(doc, { x, y, width, height, fonts, companyName, se
     .fillColor("#64748B")
     .text(`Form #${serial}`, x + width - 64, y + 10, { width: 54, align: "right" });
 
-  drawLineField(doc, { label: "Full Name", x: x + 10, y: y + 28, width: width - 20, fonts });
-  drawLineField(doc, { label: "Phone Number", x: x + 10, y: y + 50, width: (width / 2) - 15, fonts });
-  drawLineField(doc, { label: "Email Address", x: x + (width / 2) + 5, y: y + 50, width: (width / 2) - 15, fonts });
-  drawLineField(doc, { label: "Address", x: x + 10, y: y + 72, width: width - 20, fonts });
-
-  doc
-    .font(fonts.bold)
-    .fontSize(8)
-    .fillColor("#1F2937")
-    .text("Customer Type", x + 10, y + 94, { lineBreak: false });
-
-  drawCheckBox(doc, { label: "Regular", x: x + 10, y: y + 106, fonts });
-  drawCheckBox(doc, { label: "VIP", x: x + 84, y: y + 106, fonts });
-  drawCheckBox(doc, { label: "New", x: x + 132, y: y + 106, fonts });
-  drawCheckBox(doc, { label: "Credit", x: x + 182, y: y + 106, fonts });
-
-  drawLineField(doc, { label: "Other Notes", x: x + 10, y: y + 120, width: width - 20, fonts });
-  drawLineField(doc, { label: "Date", x: x + 10, y: y + 142, width: 100, fonts });
-  drawLineField(doc, { label: "Staff Name", x: x + 118, y: y + 142, width: 110, fonts });
-  drawLineField(doc, { label: "Signature", x: x + 236, y: y + 142, width: width - 246, fonts });
+  drawLineField(doc, { label: "Full Name", x: x + 10, y: y + 26, width: width - 20, fonts });
+  drawLineField(doc, { label: "Phone Number", x: x + 10, y: y + 46, width: width - 20, fonts });
+  drawLineField(doc, { label: "Email Address", x: x + 10, y: y + 66, width: width - 20, fonts });
+  drawLineField(doc, { label: "Address", x: x + 10, y: y + 86, width: width - 20, fonts });
+  drawLineField(doc, { label: "Date", x: x + 10, y: y + 106, width: width - 20, fonts });
 }
 
 function drawCutGuides(doc) {
@@ -198,8 +163,8 @@ export default async function handler(req, res) {
     await mongooseConnect();
     const store = await Store.findOne({}).lean();
 
-    const formsPerPage = clampInteger(req.query.perPage, 4, 4, 4);
-    const totalForms = clampInteger(req.query.total, 4, 40, 8);
+    const formsPerPage = 8;
+    const totalForms = 8;
 
     const companyName = "St's Michael Warehouse";
     const logoBuffer = await loadLogoBuffer(store?.logo || "");
@@ -213,9 +178,9 @@ export default async function handler(req, res) {
     doc.pipe(res);
 
     const cardWidth = 262;
-    const cardHeight = 172;
+    const cardHeight = 90;
     const xPositions = [34, 300];
-    const yPositions = [74, 440];
+    const yPositions = [74, 168, 262, 356];
 
     for (let index = 0; index < totalForms; index += 1) {
       if (index > 0 && index % formsPerPage === 0) {
@@ -234,7 +199,7 @@ export default async function handler(req, res) {
 
         doc
           .font(fonts.bold)
-          .fontSize(14)
+          .fontSize(12)
           .fillColor("#0F172A")
           .text(`${companyName} - Walk-In Customer Blank Forms`, 72, 24, { width: 488 });
 
@@ -242,7 +207,7 @@ export default async function handler(req, res) {
           .font(fonts.regular)
           .fontSize(8)
           .fillColor("#475569")
-          .text("Print, cut on dotted lines, and issue each form to a customer for accurate capture.", 72, 42, { width: 488 });
+          .text("Print this page and cut on dotted lines to get 8 customer forms.", 72, 40, { width: 488 });
 
         drawCutGuides(doc);
       }
