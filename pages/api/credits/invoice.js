@@ -13,16 +13,12 @@ function toMoney(value) {
 }
 
 function formatCurrency(value, currency = "NGN") {
-  try {
-    return new Intl.NumberFormat("en-NG", {
-      style: "currency",
-      currency: currency || "NGN",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(toMoney(value));
-  } catch {
-    return `NGN ${toMoney(value).toFixed(2)}`;
-  }
+  const amount = toMoney(value);
+  const formatted = amount.toLocaleString("en-NG", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return currency === "NGN" ? `₦${formatted}` : `${currency} ${formatted}`;
 }
 
 function formatDate(value) {
@@ -87,6 +83,32 @@ function getCreditStatusLabel(status) {
     default:
       return "Open";
   }
+}
+
+function drawField(doc, { label, value, x, y, width }) {
+  const safeValue = String(value || "-");
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(8)
+    .fillColor("#64748B")
+    .text(label, x, y, { width, lineBreak: false });
+
+  doc
+    .font("Helvetica")
+    .fontSize(10)
+    .fillColor("#0F172A")
+    .text(safeValue, x, y + 11, { width });
+
+  return y + 11 + doc.heightOfString(safeValue, { width });
+}
+
+function ensureSpace(doc, y, heightNeeded, topY = 50) {
+  if (y + heightNeeded <= 780) {
+    return y;
+  }
+
+  doc.addPage();
+  return topY;
 }
 
 function drawTableHeader(doc, y) {
@@ -180,25 +202,31 @@ export default async function handler(req, res) {
 
     const logoBuffer = await loadLogoBuffer(store?.logo || "");
 
-    const topY = 40;
+    const pageLeft = 36;
+    const pageRight = 559;
+    const contentWidth = pageRight - pageLeft;
+    const topY = 36;
     doc
-      .rect(40, topY, 515, 95)
+      .rect(pageLeft, topY, contentWidth, 88)
       .fill("#F8FAFC")
       .stroke("#E2E8F0");
 
     if (logoBuffer) {
       try {
-        doc.image(logoBuffer, 54, topY + 12, { fit: [64, 64], align: "left" });
+        doc.image(logoBuffer, pageLeft + 12, topY + 12, { fit: [58, 58], align: "left" });
       } catch {
         // Continue without logo if the source is unsupported.
       }
     }
 
+    const brandX = logoBuffer ? pageLeft + 84 : pageLeft + 16;
+    const metaX = 356;
+
     doc
       .font("Helvetica-Bold")
       .fontSize(20)
       .fillColor("#0F172A")
-      .text(companyName, 128, topY + 16, { width: 260 });
+      .text(companyName, brandX, topY + 14, { width: 250 });
 
     const businessMeta = [
       store?.storePhone,
@@ -210,69 +238,147 @@ export default async function handler(req, res) {
       .font("Helvetica")
       .fontSize(9)
       .fillColor("#334155")
-      .text(businessMeta || "", 128, topY + 44, { width: 300 });
+      .text(businessMeta || "", brandX, topY + 42, { width: 250 });
 
     doc
       .font("Helvetica-Bold")
       .fontSize(16)
       .fillColor("#1D4ED8")
-      .text("CREDIT INVOICE", 415, topY + 22, { width: 130, align: "right" });
+      .text("CREDIT INVOICE", metaX, topY + 18, { width: 180, align: "right" });
 
     doc
       .font("Helvetica")
       .fontSize(10)
       .fillColor("#1E293B")
-      .text(`Invoice No: ${invoiceCode}`, 355, topY + 53, { width: 190, align: "right" })
-      .text(`Issued: ${formatDate(transaction.createdAt)}`, 355, topY + 69, { width: 190, align: "right" });
+      .text(`Invoice No: ${invoiceCode}`, metaX, topY + 48, { width: 180, align: "right" })
+      .text(`Issued: ${formatDate(transaction.createdAt)}`, metaX, topY + 64, { width: 180, align: "right" });
 
-    let y = 155;
+    let y = 142;
     drawSectionTitle(doc, "Customer Details", y);
-    y += 18;
+    y += 14;
 
+    const customerCardY = y;
+    const fieldTop = customerCardY + 12;
+    const fieldLeftWidth = 235;
+    const statusWidth = 95;
+    const addressValue = customer?.address || "-";
+    const nameBottom = drawField(doc, {
+      label: "Customer Name",
+      value: transaction.creditCustomerName || transaction.customerName || customer?.name || "Credit Customer",
+      x: pageLeft + 12,
+      y: fieldTop,
+      width: fieldLeftWidth,
+    });
+    const statusBottom = drawField(doc, {
+      label: "Status",
+      value: getCreditStatusLabel(transaction.creditStatus),
+      x: 464,
+      y: fieldTop,
+      width: statusWidth,
+    });
+    const phoneBottom = drawField(doc, {
+      label: "Phone",
+      value: customer?.phone || "-",
+      x: pageLeft + 12,
+      y: fieldTop + 32,
+      width: 170,
+    });
+    const emailBottom = drawField(doc, {
+      label: "Email",
+      value: customer?.email || "-",
+      x: 220,
+      y: fieldTop + 32,
+      width: 220,
+    });
+    const addressTop = Math.max(phoneBottom, emailBottom) + 8;
+    const addressBottom = drawField(doc, {
+      label: "Address",
+      value: addressValue,
+      x: pageLeft + 12,
+      y: addressTop,
+      width: contentWidth - 24,
+    });
+
+    const customerCardHeight = Math.max(addressBottom - customerCardY + 14, 92);
     doc
-      .font("Helvetica")
-      .fontSize(10)
-      .fillColor("#0F172A")
-      .text(`Name: ${transaction.creditCustomerName || transaction.customerName || customer?.name || "Credit Customer"}`, 40, y)
-      .text(`Phone: ${customer?.phone || "-"}`, 40, y + 16)
-      .text(`Email: ${customer?.email || "-"}`, 220, y + 16)
-      .text(`Address: ${customer?.address || "-"}`, 40, y + 32, { width: 515 })
-      .text(`Status: ${getCreditStatusLabel(transaction.creditStatus)}`, 415, y, { width: 140, align: "right" });
+      .roundedRect(pageLeft, customerCardY, contentWidth, customerCardHeight, 10)
+      .fillAndStroke("#FFFFFF", "#E2E8F0");
 
-    y += 62;
+    drawField(doc, {
+      label: "Customer Name",
+      value: transaction.creditCustomerName || transaction.customerName || customer?.name || "Credit Customer",
+      x: pageLeft + 12,
+      y: fieldTop,
+      width: fieldLeftWidth,
+    });
+    drawField(doc, {
+      label: "Status",
+      value: getCreditStatusLabel(transaction.creditStatus),
+      x: 464,
+      y: fieldTop,
+      width: statusWidth,
+    });
+    drawField(doc, {
+      label: "Phone",
+      value: customer?.phone || "-",
+      x: pageLeft + 12,
+      y: fieldTop + 32,
+      width: 170,
+    });
+    drawField(doc, {
+      label: "Email",
+      value: customer?.email || "-",
+      x: 220,
+      y: fieldTop + 32,
+      width: 220,
+    });
+    drawField(doc, {
+      label: "Address",
+      value: addressValue,
+      x: pageLeft + 12,
+      y: addressTop,
+      width: contentWidth - 24,
+    });
+
+    y = Math.max(nameBottom, statusBottom, phoneBottom, emailBottom, addressBottom) + 20;
     drawSectionTitle(doc, "Invoice Items", y);
     y += 16;
     drawTableHeader(doc, y);
     y += 24;
 
     items.forEach((item, index) => {
-      const qty = Number(item.qty || item.quantity || 0);
-      const unitPrice = toMoney(item.salePriceIncTax || item.price || 0);
-      const lineTotal = toMoney(qty * unitPrice);
-
-      if (y > 680) {
-        doc.addPage();
-        y = 50;
+      y = ensureSpace(doc, y, 34);
+      if (y === 50) {
         drawSectionTitle(doc, "Invoice Items (cont.)", y);
         y += 16;
         drawTableHeader(doc, y);
         y += 24;
       }
 
+      const qty = Number(item.qty || item.quantity || 0);
+      const unitPrice = toMoney(item.salePriceIncTax || item.price || 0);
+      const lineTotal = toMoney(qty * unitPrice);
+
+      const itemName = String(item.name || "Unnamed item");
+      const rowHeight = Math.max(
+        18,
+        doc.heightOfString(itemName, { width: 220 }),
+      );
+
       doc
         .font("Helvetica")
         .fontSize(10)
         .fillColor("#0F172A")
         .text(String(index + 1), 40, y)
-        .text(String(item.name || "Unnamed item"), 68, y, { width: 220 })
+        .text(itemName, 68, y, { width: 220 })
         .text(String(qty), 300, y, { width: 40, align: "right" })
         .text(formatCurrency(unitPrice, currency), 355, y, { width: 90, align: "right" })
         .text(formatCurrency(lineTotal, currency), 455, y, { width: 100, align: "right" });
 
-      y += 20;
+      y += rowHeight + 4;
     });
 
-    y += 6;
+    y += 2;
     doc
       .moveTo(320, y)
       .lineTo(555, y)
@@ -301,7 +407,8 @@ export default async function handler(req, res) {
       .text("Outstanding", 355, y, { width: 90, align: "right" })
       .text(formatCurrency(balance, currency), 455, y, { width: 100, align: "right" });
 
-    y += 32;
+    y += 28;
+    y = ensureSpace(doc, y, payments.length > 0 ? (payments.length * 18) + 44 : 54);
     drawSectionTitle(doc, "Recovery History", y);
     y += 18;
 
@@ -314,9 +421,8 @@ export default async function handler(req, res) {
       y += 18;
     } else {
       payments.forEach((payment, index) => {
-        if (y > 740) {
-          doc.addPage();
-          y = 50;
+        y = ensureSpace(doc, y, 20);
+        if (y === 50) {
           drawSectionTitle(doc, "Recovery History (cont.)", y);
           y += 18;
         }
@@ -337,11 +443,8 @@ export default async function handler(req, res) {
 
     const noteText = transaction.creditNotes || "";
     if (noteText) {
-      y += 14;
-      if (y > 730) {
-        doc.addPage();
-        y = 50;
-      }
+      y += 12;
+      y = ensureSpace(doc, y, 58);
       drawSectionTitle(doc, "Notes", y);
       y += 18;
       doc
@@ -349,14 +452,16 @@ export default async function handler(req, res) {
         .fontSize(9)
         .fillColor("#334155")
         .text(noteText, 40, y, { width: 515 });
+      y += doc.heightOfString(noteText, { width: 515 }) + 8;
     }
 
+    const footerY = Math.min(Math.max(y + 14, 756), 786);
     doc
       .font("Helvetica")
       .fontSize(9)
       .fillColor("#64748B")
-      .text("Generated by Inventory Admin System", 40, 800, { align: "left" })
-      .text(`Generated on ${formatDate(new Date())}`, 40, 800, { align: "right" });
+      .text("Generated by Inventory Admin System", 40, footerY, { align: "left" })
+      .text(`Generated on ${formatDate(new Date())}`, 40, footerY, { align: "right" });
 
     doc.end();
   } catch (error) {

@@ -93,15 +93,6 @@ function normalizeLocationValue(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 export default function Products() {
   const router = useRouter();
   const fetchProducts = useCallback(() => fetcher("/api/products"), []);
@@ -141,13 +132,6 @@ export default function Products() {
       : queryLocation || "all"
   );
   const [availableLocations, setAvailableLocations] = useState([]);
-  const [storeProfile, setStoreProfile] = useState({
-    companyName: "",
-    storeName: "",
-    storePhone: "",
-    email: "",
-    logo: "",
-  });
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [showPriceListModal, setShowPriceListModal] = useState(false);
   const [priceListMode, setPriceListMode] = useState("all");
@@ -296,15 +280,6 @@ export default function Products() {
               .map((locationValue) => String(locationValue || "").trim())
               .filter(Boolean)
           : [];
-
-        const store = response.data?.store || {};
-        setStoreProfile({
-          companyName: store.companyName || store.companyDisplayName || "",
-          storeName: store.storeName || "",
-          storePhone: store.storePhone || "",
-          email: store.email || "",
-          logo: store.logo || "",
-        });
 
         setAvailableLocations(storeLocations);
       })
@@ -673,7 +648,6 @@ export default function Products() {
 
     setIsPrintingPriceList(true);
     try {
-      const printedAt = new Date();
       const titleByMode = {
         all: "General Product Price List",
         filtered: "Filtered Product Price List",
@@ -681,184 +655,51 @@ export default function Products() {
         category: `Category Price List${priceListCategory !== "all" ? ` - ${categoryMap[priceListCategory] || "Uncategorized"}` : ""}`,
       };
       const reportTitle = titleByMode[priceListMode] || "Product Price List";
-      const printableWindow = window.open("", "_blank", "noopener,noreferrer,width=1100,height=800");
-      if (!printableWindow) {
-        await showAlertDialog({
-          title: "Unable to open print preview",
-          message: "Please allow pop-ups for this site and try again.",
-          tone: "danger",
-        });
-        return;
+      const response = await fetch("/api/products/price-list", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: reportTitle,
+          products: rows.map((product) => ({
+            name: product.name || "",
+            barcode: product.barcode || "",
+            locations: Array.isArray(product.locations) && product.locations.length > 0
+              ? product.locations.join(", ")
+              : "Unassigned",
+            categoryLabel: categoryMap[product.category] || product.category || "Uncategorized",
+            salePriceIncTax: Number(product.salePriceIncTax || 0),
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || "Unable to generate price list PDF");
       }
 
-      const companyName = storeProfile.companyName || storeProfile.storeName || "Business";
-      const headerMeta = [storeProfile.storePhone, storeProfile.email].filter(Boolean).join(" | ");
-      const logoMarkup = storeProfile.logo
-        ? `<img src="${escapeHtml(storeProfile.logo)}" alt="Business logo" style="width:72px;height:72px;object-fit:contain;border-radius:12px;border:1px solid #d1d5db;background:#fff;padding:8px;" />`
-        : "";
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") || "";
+      const filenameMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
+      const filename = filenameMatch?.[1] || "product-price-list.pdf";
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
 
-      const tableRows = rows.map((product, index) => {
-        const categoryLabel = categoryMap[product.category] || product.category || "Uncategorized";
-        const locations = Array.isArray(product.locations) && product.locations.length > 0
-          ? product.locations.join(", ")
-          : "Unassigned";
-        return `
-          <tr>
-            <td>${index + 1}</td>
-            <td>${escapeHtml(product.name || "")}</td>
-            <td>${escapeHtml(categoryLabel)}</td>
-            <td>${escapeHtml(product.barcode || "-")}</td>
-            <td>${escapeHtml(locations)}</td>
-            <td class="price">${escapeHtml(formatCurrency(product.salePriceIncTax || 0))}</td>
-          </tr>
-        `;
-      }).join("");
-
-      printableWindow.document.open();
-      printableWindow.document.write(`
-        <!doctype html>
-        <html>
-          <head>
-            <meta charset="utf-8" />
-            <title>${escapeHtml(reportTitle)}</title>
-            <style>
-              :root {
-                color-scheme: light;
-              }
-              * {
-                box-sizing: border-box;
-              }
-              body {
-                margin: 0;
-                padding: 24px;
-                font-family: "Segoe UI", Arial, sans-serif;
-                color: #0f172a;
-                background: linear-gradient(160deg, #f8fafc, #eef2ff 55%, #ecfeff);
-              }
-              .sheet {
-                background: #ffffff;
-                border: 1px solid #dbe4ff;
-                border-radius: 18px;
-                padding: 24px;
-                box-shadow: 0 10px 32px rgba(15, 23, 42, 0.08);
-              }
-              .header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                gap: 16px;
-                margin-bottom: 20px;
-              }
-              .brand h1 {
-                margin: 0;
-                font-size: 24px;
-                line-height: 1.1;
-              }
-              .brand p {
-                margin: 6px 0 0;
-                color: #475569;
-                font-size: 12px;
-              }
-              .report-title {
-                margin: 0 0 6px;
-                font-size: 18px;
-                color: #1d4ed8;
-              }
-              .meta {
-                margin: 0;
-                font-size: 12px;
-                color: #475569;
-              }
-              table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 12px;
-                font-size: 12px;
-              }
-              th, td {
-                border: 1px solid #e2e8f0;
-                padding: 8px 9px;
-                text-align: left;
-                vertical-align: top;
-              }
-              th {
-                background: #eff6ff;
-                color: #1e3a8a;
-                font-size: 11px;
-                text-transform: uppercase;
-                letter-spacing: 0.03em;
-              }
-              .price {
-                font-weight: 700;
-                text-align: right;
-              }
-              .footer {
-                margin-top: 14px;
-                display: flex;
-                justify-content: space-between;
-                gap: 12px;
-                color: #475569;
-                font-size: 11px;
-              }
-              @media print {
-                body {
-                  background: #fff;
-                  padding: 0;
-                }
-                .sheet {
-                  border: 0;
-                  border-radius: 0;
-                  box-shadow: none;
-                  padding: 0;
-                }
-              }
-            </style>
-          </head>
-          <body>
-            <main class="sheet">
-              <header class="header">
-                <div class="brand">
-                  <h1>${escapeHtml(companyName)}</h1>
-                  ${headerMeta ? `<p>${escapeHtml(headerMeta)}</p>` : ""}
-                  <h2 class="report-title">${escapeHtml(reportTitle)}</h2>
-                  <p class="meta">Generated ${escapeHtml(printedAt.toLocaleString())}</p>
-                </div>
-                ${logoMarkup}
-              </header>
-
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Product</th>
-                    <th>Category</th>
-                    <th>Barcode</th>
-                    <th>Location</th>
-                    <th style="text-align:right;">Sale Price</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${tableRows}
-                </tbody>
-              </table>
-
-              <div class="footer">
-                <span>Total products: ${rows.length}</span>
-                <span>Printed from inventory admin</span>
-              </div>
-            </main>
-            <script>
-              window.addEventListener("load", () => {
-                setTimeout(() => {
-                  window.print();
-                }, 250);
-              });
-            </script>
-          </body>
-        </html>
-      `);
-      printableWindow.document.close();
       closePriceListModal();
+    } catch (error) {
+      console.error("Price list download failed", error);
+      await showAlertDialog({
+        title: "Download failed",
+        message: error.message || "Unable to generate price list PDF.",
+        tone: "danger",
+      });
     } finally {
       setIsPrintingPriceList(false);
     }
@@ -1405,7 +1246,7 @@ export default function Products() {
             <div className="w-full max-w-xl rounded-xl border border-gray-200 bg-white p-6 shadow-xl">
               <h2 className="text-lg font-semibold text-gray-900">Print Product Price List</h2>
               <p className="mt-1 text-sm text-gray-600">
-                Choose what to include. In the print dialog you can print directly or save as PDF.
+                Choose what to include and the system will download a PDF directly.
               </p>
 
               <div className="mt-5 space-y-3">
@@ -1481,7 +1322,7 @@ export default function Products() {
                   disabled={isPrintingPriceList}
                   className="btn-action-primary"
                 >
-                  {isPrintingPriceList ? "Preparing..." : "Print / Save PDF"}
+                  {isPrintingPriceList ? "Preparing PDF..." : "Download PDF"}
                 </button>
               </div>
             </div>
