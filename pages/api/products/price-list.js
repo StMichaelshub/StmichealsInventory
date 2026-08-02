@@ -5,6 +5,21 @@ import { authMiddleware, isStaff } from "@/lib/auth-middleware";
 import { mongooseConnect } from "@/lib/mongodb";
 import Store from "@/models/Store";
 
+const FONT_CANDIDATES = {
+  regular: [
+    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/segoeui.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+  ],
+  bold: [
+    "C:/Windows/Fonts/arialbd.ttf",
+    "C:/Windows/Fonts/segoeuib.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+  ],
+};
+
 function sanitizeFilename(value = "price-list") {
   return String(value)
     .toLowerCase()
@@ -27,6 +42,36 @@ function toDisplayTitle(value = "") {
     .trim()
     .toLowerCase()
     .replace(/(^|[\s/(-])([a-z])/g, (match, prefix, letter) => `${prefix}${letter.toUpperCase()}`);
+}
+
+async function resolveFontPath(candidates = []) {
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  return null;
+}
+
+async function registerPdfFonts(doc) {
+  const regularPath = await resolveFontPath(FONT_CANDIDATES.regular);
+  const boldPath = await resolveFontPath(FONT_CANDIDATES.bold);
+
+  if (regularPath) {
+    doc.registerFont("AppRegular", regularPath);
+  }
+  if (boldPath) {
+    doc.registerFont("AppBold", boldPath);
+  }
+
+  return {
+    regular: regularPath ? "AppRegular" : "Helvetica",
+    bold: boldPath ? "AppBold" : "Helvetica-Bold",
+  };
 }
 
 async function loadLogoBuffer(logoUrl = "") {
@@ -95,6 +140,7 @@ export default async function handler(req, res) {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     doc.pipe(res);
+    const fonts = await registerPdfFonts(doc);
 
     doc
       .rect(36, 36, 523, 82)
@@ -110,19 +156,19 @@ export default async function handler(req, res) {
     }
 
     doc
-      .font("Helvetica-Bold")
+      .font(fonts.bold)
       .fontSize(20)
       .fillColor("#0F172A")
       .text(companyName, 118, 50, { width: 320 });
 
     doc
-      .font("Helvetica")
+      .font(fonts.regular)
       .fontSize(9)
       .fillColor("#475569")
       .text(businessMeta, 118, 76, { width: 280 });
 
     doc
-      .font("Helvetica-Bold")
+      .font(fonts.bold)
       .fontSize(16)
       .fillColor("#1D4ED8")
       .text(title, 360, 61, { width: 180, align: "right" });
@@ -130,7 +176,7 @@ export default async function handler(req, res) {
     let y = 138;
 
     doc
-      .font("Helvetica-Bold")
+      .font(fonts.bold)
       .fontSize(10)
       .fillColor("#1E3A8A")
       .text("#", 40, y)
@@ -159,7 +205,7 @@ export default async function handler(req, res) {
         doc.addPage();
         y = 48;
         doc
-          .font("Helvetica-Bold")
+          .font(fonts.bold)
           .fontSize(10)
           .fillColor("#1E3A8A")
           .text("#", 40, y)
@@ -175,7 +221,7 @@ export default async function handler(req, res) {
       }
 
       doc
-        .font("Helvetica")
+        .font(fonts.regular)
         .fontSize(9.5)
         .fillColor("#0F172A")
         .text(String(index + 1), 40, y)
@@ -193,7 +239,7 @@ export default async function handler(req, res) {
     });
 
     doc
-      .font("Helvetica")
+      .font(fonts.regular)
       .fontSize(9)
       .fillColor("#64748B")
       .text(`Total products: ${products.length}`, 40, Math.min(y + 8, 788));

@@ -7,6 +7,21 @@ import Transaction from "@/models/Transactions";
 import Store from "@/models/Store";
 import Customer from "@/models/Customer";
 
+const FONT_CANDIDATES = {
+  regular: [
+    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/segoeui.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+  ],
+  bold: [
+    "C:/Windows/Fonts/arialbd.ttf",
+    "C:/Windows/Fonts/segoeuib.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+  ],
+};
+
 function toMoney(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0;
@@ -34,6 +49,36 @@ function sanitizeFilename(value = "invoice") {
     .replace(/[^a-z0-9-_]+/g, "-")
     .replace(/-{2,}/g, "-")
     .replace(/^-|-$/g, "") || "invoice";
+}
+
+async function resolveFontPath(candidates = []) {
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  return null;
+}
+
+async function registerPdfFonts(doc) {
+  const regularPath = await resolveFontPath(FONT_CANDIDATES.regular);
+  const boldPath = await resolveFontPath(FONT_CANDIDATES.bold);
+
+  if (regularPath) {
+    doc.registerFont("AppRegular", regularPath);
+  }
+  if (boldPath) {
+    doc.registerFont("AppBold", boldPath);
+  }
+
+  return {
+    regular: regularPath ? "AppRegular" : "Helvetica",
+    bold: boldPath ? "AppBold" : "Helvetica-Bold",
+  };
 }
 
 async function loadLogoBuffer(logoUrl = "") {
@@ -88,13 +133,13 @@ function getCreditStatusLabel(status) {
 function drawField(doc, { label, value, x, y, width }) {
   const safeValue = String(value || "-");
   doc
-    .font("Helvetica-Bold")
+    .font(doc.locals.fonts.bold)
     .fontSize(8)
     .fillColor("#64748B")
     .text(label, x, y, { width, lineBreak: false });
 
   doc
-    .font("Helvetica")
+    .font(doc.locals.fonts.regular)
     .fontSize(10)
     .fillColor("#0F172A")
     .text(safeValue, x, y + 11, { width });
@@ -113,7 +158,7 @@ function ensureSpace(doc, y, heightNeeded, topY = 50) {
 
 function drawTableHeader(doc, y) {
   doc
-    .font("Helvetica-Bold")
+    .font(doc.locals.fonts.bold)
     .fontSize(10)
     .fillColor("#1E3A8A")
     .text("#", 40, y)
@@ -132,7 +177,7 @@ function drawTableHeader(doc, y) {
 
 function drawSectionTitle(doc, text, y) {
   doc
-    .font("Helvetica-Bold")
+    .font(doc.locals.fonts.bold)
     .fontSize(11)
     .fillColor("#0F172A")
     .text(text, 40, y);
@@ -199,6 +244,8 @@ export default async function handler(req, res) {
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     doc.pipe(res);
+    const fonts = await registerPdfFonts(doc);
+    doc.locals = { fonts };
 
     const logoBuffer = await loadLogoBuffer(store?.logo || "");
 
@@ -223,7 +270,7 @@ export default async function handler(req, res) {
     const metaX = 356;
 
     doc
-      .font("Helvetica-Bold")
+      .font(fonts.bold)
       .fontSize(20)
       .fillColor("#0F172A")
       .text(companyName, brandX, topY + 14, { width: 250 });
@@ -235,19 +282,19 @@ export default async function handler(req, res) {
     ].filter(Boolean).join(" | ");
 
     doc
-      .font("Helvetica")
+      .font(fonts.regular)
       .fontSize(9)
       .fillColor("#334155")
       .text(businessMeta || "", brandX, topY + 42, { width: 250 });
 
     doc
-      .font("Helvetica-Bold")
+      .font(fonts.bold)
       .fontSize(16)
       .fillColor("#1D4ED8")
       .text("CREDIT INVOICE", metaX, topY + 18, { width: 180, align: "right" });
 
     doc
-      .font("Helvetica")
+      .font(fonts.regular)
       .fontSize(10)
       .fillColor("#1E293B")
       .text(`Invoice No: ${invoiceCode}`, metaX, topY + 48, { width: 180, align: "right" })
@@ -366,7 +413,7 @@ export default async function handler(req, res) {
       );
 
       doc
-        .font("Helvetica")
+        .font(fonts.regular)
         .fontSize(10)
         .fillColor("#0F172A")
         .text(String(index + 1), 40, y)
@@ -388,7 +435,7 @@ export default async function handler(req, res) {
 
     y += 10;
     doc
-      .font("Helvetica")
+      .font(fonts.regular)
       .fontSize(10)
       .fillColor("#0F172A")
       .text("Original Amount", 355, y, { width: 90, align: "right" })
@@ -401,7 +448,7 @@ export default async function handler(req, res) {
 
     y += 16;
     doc
-      .font("Helvetica-Bold")
+      .font(fonts.bold)
       .fontSize(11)
       .fillColor("#92400E")
       .text("Outstanding", 355, y, { width: 90, align: "right" })
@@ -414,7 +461,7 @@ export default async function handler(req, res) {
 
     if (payments.length === 0) {
       doc
-        .font("Helvetica")
+        .font(fonts.regular)
         .fontSize(10)
         .fillColor("#475569")
         .text("No recovery payment has been recorded for this credit invoice.", 40, y);
@@ -428,7 +475,7 @@ export default async function handler(req, res) {
         }
 
         doc
-          .font("Helvetica")
+          .font(fonts.regular)
           .fontSize(10)
           .fillColor("#0F172A")
           .text(`#${payment.sequence || index + 1}`, 40, y)
@@ -448,7 +495,7 @@ export default async function handler(req, res) {
       drawSectionTitle(doc, "Notes", y);
       y += 18;
       doc
-        .font("Helvetica")
+        .font(fonts.regular)
         .fontSize(9)
         .fillColor("#334155")
         .text(noteText, 40, y, { width: 515 });
@@ -457,7 +504,7 @@ export default async function handler(req, res) {
 
     const footerY = Math.min(Math.max(y + 14, 756), 786);
     doc
-      .font("Helvetica")
+      .font(fonts.regular)
       .fontSize(9)
       .fillColor("#64748B")
       .text("Generated by Inventory Admin System", 40, footerY, { align: "left" })
