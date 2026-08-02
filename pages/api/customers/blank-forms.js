@@ -1,0 +1,270 @@
+import fs from "fs/promises";
+import path from "path";
+import PDFDocument from "pdfkit";
+import { authMiddleware, isStaff } from "@/lib/auth-middleware";
+import { mongooseConnect } from "@/lib/mongodb";
+import Store from "@/models/Store";
+
+const FONT_CANDIDATES = {
+  regular: [
+    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/segoeui.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+  ],
+  bold: [
+    "C:/Windows/Fonts/arialbd.ttf",
+    "C:/Windows/Fonts/segoeuib.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+  ],
+};
+
+function clampInteger(value, min, max, fallback) {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+async function resolveFontPath(candidates = []) {
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // Continue to next candidate.
+    }
+  }
+
+  return null;
+}
+
+async function registerPdfFonts(doc) {
+  const regularPath = await resolveFontPath(FONT_CANDIDATES.regular);
+  const boldPath = await resolveFontPath(FONT_CANDIDATES.bold);
+
+  if (regularPath) doc.registerFont("AppRegular", regularPath);
+  if (boldPath) doc.registerFont("AppBold", boldPath);
+
+  return {
+    regular: regularPath ? "AppRegular" : "Helvetica",
+    bold: boldPath ? "AppBold" : "Helvetica-Bold",
+  };
+}
+
+async function loadLogoBuffer(logoUrl = "") {
+  const trimmed = String(logoUrl || "").trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith("data:image/")) {
+    const base64Index = trimmed.indexOf("base64,");
+    if (base64Index === -1) return null;
+    return Buffer.from(trimmed.slice(base64Index + 7), "base64");
+  }
+
+  if (trimmed.startsWith("/")) {
+    const localPath = path.join(process.cwd(), "public", trimmed.replace(/^\//, ""));
+    try {
+      return await fs.readFile(localPath);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(trimmed);
+    if (!response.ok) return null;
+    const arrayBuffer = await response.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  } catch {
+    return null;
+  }
+}
+
+function drawLineField(doc, { label, x, y, width, fonts }) {
+  doc
+    .font(fonts.bold)
+    .fontSize(8)
+    .fillColor("#1F2937")
+    .text(label, x, y, { width, lineBreak: false });
+
+  const lineY = y + 14;
+  doc
+    .moveTo(x, lineY)
+    .lineTo(x + width, lineY)
+    .strokeColor("#94A3B8")
+    .lineWidth(0.8)
+    .stroke();
+}
+
+function drawCheckBox(doc, { label, x, y, fonts }) {
+  doc
+    .rect(x, y, 8, 8)
+    .strokeColor("#64748B")
+    .lineWidth(0.8)
+    .stroke();
+
+  doc
+    .font(fonts.regular)
+    .fontSize(8)
+    .fillColor("#334155")
+    .text(label, x + 12, y - 1, { lineBreak: false });
+}
+
+function drawCustomerFormCard(doc, { x, y, width, height, fonts, companyName, serial }) {
+  doc
+    .roundedRect(x, y, width, height, 8)
+    .strokeColor("#CBD5E1")
+    .lineWidth(1)
+    .stroke();
+
+  doc
+    .font(fonts.bold)
+    .fontSize(10)
+    .fillColor("#0F172A")
+    .text(`${companyName} - Customer Intake Form`, x + 10, y + 8, { width: width - 20 });
+
+  doc
+    .font(fonts.regular)
+    .fontSize(8)
+    .fillColor("#64748B")
+    .text(`Form #${serial}`, x + width - 64, y + 10, { width: 54, align: "right" });
+
+  drawLineField(doc, { label: "Full Name", x: x + 10, y: y + 28, width: width - 20, fonts });
+  drawLineField(doc, { label: "Phone Number", x: x + 10, y: y + 50, width: (width / 2) - 15, fonts });
+  drawLineField(doc, { label: "Email Address", x: x + (width / 2) + 5, y: y + 50, width: (width / 2) - 15, fonts });
+  drawLineField(doc, { label: "Address", x: x + 10, y: y + 72, width: width - 20, fonts });
+
+  doc
+    .font(fonts.bold)
+    .fontSize(8)
+    .fillColor("#1F2937")
+    .text("Customer Type", x + 10, y + 94, { lineBreak: false });
+
+  drawCheckBox(doc, { label: "Regular", x: x + 10, y: y + 106, fonts });
+  drawCheckBox(doc, { label: "VIP", x: x + 84, y: y + 106, fonts });
+  drawCheckBox(doc, { label: "New", x: x + 132, y: y + 106, fonts });
+  drawCheckBox(doc, { label: "Credit", x: x + 182, y: y + 106, fonts });
+
+  drawLineField(doc, { label: "Other Notes", x: x + 10, y: y + 120, width: width - 20, fonts });
+  drawLineField(doc, { label: "Date", x: x + 10, y: y + 142, width: 100, fonts });
+  drawLineField(doc, { label: "Staff Name", x: x + 118, y: y + 142, width: 110, fonts });
+  drawLineField(doc, { label: "Signature", x: x + 236, y: y + 142, width: width - 246, fonts });
+}
+
+function drawCutGuides(doc) {
+  const margin = 30;
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const midX = pageWidth / 2;
+  const midY = pageHeight / 2;
+
+  doc
+    .moveTo(midX, margin)
+    .lineTo(midX, pageHeight - margin)
+    .dash(4, { space: 4 })
+    .strokeColor("#CBD5E1")
+    .lineWidth(0.7)
+    .stroke()
+    .undash();
+
+  doc
+    .moveTo(margin, midY)
+    .lineTo(pageWidth - margin, midY)
+    .dash(4, { space: 4 })
+    .strokeColor("#CBD5E1")
+    .lineWidth(0.7)
+    .stroke()
+    .undash();
+}
+
+export default async function handler(req, res) {
+  const authError = authMiddleware(req, res);
+  if (authError) return authError;
+
+  if (!isStaff(req)) {
+    return res.status(403).json({ success: false, message: "Insufficient permissions" });
+  }
+
+  if (req.method !== "GET") {
+    return res.status(405).json({ success: false, message: "Method not allowed" });
+  }
+
+  try {
+    await mongooseConnect();
+    const store = await Store.findOne({}).lean();
+
+    const formsPerPage = clampInteger(req.query.perPage, 4, 4, 4);
+    const totalForms = clampInteger(req.query.total, 4, 40, 8);
+
+    const companyName = "St's Michael Warehouse";
+    const logoBuffer = await loadLogoBuffer(store?.logo || "");
+
+    const doc = new PDFDocument({ size: "A4", margin: 24 });
+    const fonts = await registerPdfFonts(doc);
+
+    const filename = "st-michael-warehouse-customer-blank-forms.pdf";
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename=\"${filename}\"`);
+    doc.pipe(res);
+
+    const cardWidth = 262;
+    const cardHeight = 172;
+    const xPositions = [34, 300];
+    const yPositions = [74, 440];
+
+    for (let index = 0; index < totalForms; index += 1) {
+      if (index > 0 && index % formsPerPage === 0) {
+        doc.addPage();
+      }
+
+      const indexInPage = index % formsPerPage;
+      if (indexInPage === 0) {
+        if (logoBuffer) {
+          try {
+            doc.image(logoBuffer, 34, 22, { fit: [32, 32] });
+          } catch {
+            // Continue without logo.
+          }
+        }
+
+        doc
+          .font(fonts.bold)
+          .fontSize(14)
+          .fillColor("#0F172A")
+          .text(`${companyName} - Walk-In Customer Blank Forms`, 72, 24, { width: 488 });
+
+        doc
+          .font(fonts.regular)
+          .fontSize(8)
+          .fillColor("#475569")
+          .text("Print, cut on dotted lines, and issue each form to a customer for accurate capture.", 72, 42, { width: 488 });
+
+        drawCutGuides(doc);
+      }
+
+      const column = indexInPage % 2;
+      const row = Math.floor(indexInPage / 2);
+
+      drawCustomerFormCard(doc, {
+        x: xPositions[column],
+        y: yPositions[row],
+        width: cardWidth,
+        height: cardHeight,
+        fonts,
+        companyName,
+        serial: index + 1,
+      });
+    }
+
+    doc.end();
+  } catch (error) {
+    console.error("Customer blank form PDF error:", error);
+    if (res.headersSent || res.writableEnded) return;
+    return res.status(500).json({ success: false, message: "Unable to generate blank forms" });
+  }
+}

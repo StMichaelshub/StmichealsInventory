@@ -101,27 +101,38 @@ function drawNairaAmountRight(doc, {
 
   const rightEdge = x + width;
   const numberWidth = doc.widthOfString(textValue);
-  const symbolText = "N";
-  const symbolWidth = doc.widthOfString(symbolText);
+  const symbolWidth = Math.max(7, fontSize * 0.82);
+  const symbolHeight = Math.max(9, fontSize * 1.02);
   const gap = 2;
   const numberX = rightEdge - numberWidth;
   const symbolX = numberX - gap - symbolWidth;
 
-  doc.text(symbolText, symbolX, y, { lineBreak: false });
+  const topY = y + (fontSize * 0.12);
+  const bottomY = topY + symbolHeight;
+  const leftX = symbolX;
+  const rightX = symbolX + symbolWidth;
+  const midUpper = topY + (symbolHeight * 0.42);
+  const midLower = topY + (symbolHeight * 0.62);
 
-  const lineYTop = y + (fontSize * 0.52);
-  const lineYBottom = y + (fontSize * 0.7);
   doc
-    .moveTo(symbolX + 0.5, lineYTop)
-    .lineTo(symbolX + symbolWidth - 0.5, lineYTop)
+    .moveTo(leftX, bottomY)
+    .lineTo(leftX, topY)
+    .lineTo(rightX, bottomY)
+    .lineTo(rightX, topY)
     .strokeColor(color)
-    .lineWidth(0.8)
+    .lineWidth(1.1)
     .stroke();
   doc
-    .moveTo(symbolX + 0.5, lineYBottom)
-    .lineTo(symbolX + symbolWidth - 0.5, lineYBottom)
+    .moveTo(leftX - 0.2, midUpper)
+    .lineTo(rightX + 0.2, midUpper)
     .strokeColor(color)
-    .lineWidth(0.8)
+    .lineWidth(0.9)
+    .stroke();
+  doc
+    .moveTo(leftX - 0.2, midLower)
+    .lineTo(rightX + 0.2, midLower)
+    .strokeColor(color)
+    .lineWidth(0.9)
     .stroke();
 
   doc.font(font).fontSize(fontSize).fillColor(color).text(textValue, numberX, y, { lineBreak: false });

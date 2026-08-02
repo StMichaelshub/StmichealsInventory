@@ -8,7 +8,7 @@ import { showConfirmDialog } from "@/lib/dialogs";
 import { showToastMessage } from "@/lib/toast-state";
 import { formatCurrency } from "@/lib/format";
 import { useState, useEffect } from "react";
-import { Search, Users, Megaphone } from "lucide-react";
+import { Download, Search, Users, Megaphone } from "lucide-react";
 
 const EMPTY_CUSTOMER_FORM = {
   name: "",
@@ -31,6 +31,7 @@ export default function CustomersPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isDownloadingForms, setIsDownloadingForms] = useState(false);
 
   useEffect(() => {
     fetchCustomers();
@@ -167,6 +168,34 @@ export default function CustomersPage() {
     }
   }
 
+  async function handleDownloadBlankForms() {
+    try {
+      setIsDownloadingForms(true);
+      const response = await fetch("/api/customers/blank-forms?total=8&perPage=4");
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || "Failed to generate blank customer forms");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") || "";
+      const filenameMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
+      const filename = filenameMatch?.[1] || "customer-blank-forms.pdf";
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (downloadError) {
+      setError(downloadError.message || "Unable to download blank customer forms");
+    } finally {
+      setIsDownloadingForms(false);
+    }
+  }
+
   if (loading) {
     return (
       <Layout>
@@ -184,16 +213,27 @@ export default function CustomersPage() {
           {/* Header */}
           <div className="page-header flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <h1 className="page-title">Customers</h1>
-            <button
-              onClick={() => {
-                setShowForm(!showForm);
-                setEditing(null);
-                setFormData(EMPTY_CUSTOMER_FORM);
-              }}
-              className="btn-action-primary w-full sm:w-auto"
-            >
-              + Add Customer
-            </button>
+            <div className="flex w-full sm:w-auto gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleDownloadBlankForms}
+                disabled={isDownloadingForms}
+                className="btn-action-secondary w-full sm:w-auto inline-flex items-center justify-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                {isDownloadingForms ? "Preparing Forms..." : "Download Blank Forms"}
+              </button>
+              <button
+                onClick={() => {
+                  setShowForm(!showForm);
+                  setEditing(null);
+                  setFormData(EMPTY_CUSTOMER_FORM);
+                }}
+                className="btn-action-primary w-full sm:w-auto"
+              >
+                + Add Customer
+              </button>
+            </div>
           </div>
 
           {/* Search Bar */}
