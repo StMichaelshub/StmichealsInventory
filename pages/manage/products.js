@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Search } from "lucide-react";
+import { Printer, Search } from "lucide-react";
 import Layout from "@/components/Layout";
 import { formatCurrency as formatCurrencyValue } from "@/lib/format";
 import axios from "axios";
@@ -93,6 +93,15 @@ function normalizeLocationValue(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export default function Products() {
   const router = useRouter();
   const fetchProducts = useCallback(() => fetcher("/api/products"), []);
@@ -132,6 +141,18 @@ export default function Products() {
       : queryLocation || "all"
   );
   const [availableLocations, setAvailableLocations] = useState([]);
+  const [storeProfile, setStoreProfile] = useState({
+    companyName: "",
+    storeName: "",
+    storePhone: "",
+    email: "",
+    logo: "",
+  });
+  const [selectedProductIds, setSelectedProductIds] = useState([]);
+  const [showPriceListModal, setShowPriceListModal] = useState(false);
+  const [priceListMode, setPriceListMode] = useState("all");
+  const [priceListCategory, setPriceListCategory] = useState("all");
+  const [isPrintingPriceList, setIsPrintingPriceList] = useState(false);
 
   // pagination
   const [entriesPerPage, setEntriesPerPage] = useState(() => {
@@ -275,6 +296,15 @@ export default function Products() {
               .map((locationValue) => String(locationValue || "").trim())
               .filter(Boolean)
           : [];
+
+        const store = response.data?.store || {};
+        setStoreProfile({
+          companyName: store.companyName || store.companyDisplayName || "",
+          storeName: store.storeName || "",
+          storePhone: store.storePhone || "",
+          email: store.email || "",
+          logo: store.logo || "",
+        });
 
         setAvailableLocations(storeLocations);
       })
@@ -572,6 +602,268 @@ export default function Products() {
     );
   };
 
+  const allVisibleSelected = visibleProducts.length > 0
+    && visibleProducts.every((product) => selectedProductIds.includes(product._id));
+
+  const toggleProductSelection = useCallback((productId) => {
+    setSelectedProductIds((prev) => {
+      if (prev.includes(productId)) {
+        return prev.filter((id) => id !== productId);
+      }
+      return [...prev, productId];
+    });
+  }, []);
+
+  const toggleSelectVisibleProducts = useCallback(() => {
+    const visibleIds = visibleProducts.map((product) => product._id);
+    setSelectedProductIds((prev) => {
+      const visibleSet = new Set(visibleIds);
+      const allSelected = visibleIds.length > 0 && visibleIds.every((id) => prev.includes(id));
+      if (allSelected) {
+        return prev.filter((id) => !visibleSet.has(id));
+      }
+
+      const merged = new Set(prev);
+      visibleIds.forEach((id) => merged.add(id));
+      return Array.from(merged);
+    });
+  }, [visibleProducts]);
+
+  const openPriceListModal = () => {
+    setPriceListMode(selectedProductIds.length > 0 ? "selected" : "all");
+    setPriceListCategory(selectedCategory !== "all" ? selectedCategory : "all");
+    setShowPriceListModal(true);
+  };
+
+  const closePriceListModal = () => {
+    setShowPriceListModal(false);
+  };
+
+  const getPriceListProducts = () => {
+    if (priceListMode === "selected") {
+      const selectedIds = new Set(selectedProductIds);
+      return allProducts.filter((product) => selectedIds.has(product._id));
+    }
+
+    if (priceListMode === "filtered") {
+      return filteredProducts;
+    }
+
+    if (priceListMode === "category") {
+      if (priceListCategory === "all") return allProducts;
+      return allProducts.filter((product) => product.category === priceListCategory);
+    }
+
+    return allProducts;
+  };
+
+  const handlePrintPriceList = async () => {
+    const rows = getPriceListProducts()
+      .slice()
+      .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")));
+
+    if (rows.length === 0) {
+      await showAlertDialog({
+        title: "No products to print",
+        message: "Adjust your selection or filters, then try again.",
+        tone: "warning",
+      });
+      return;
+    }
+
+    setIsPrintingPriceList(true);
+    try {
+      const printedAt = new Date();
+      const titleByMode = {
+        all: "General Product Price List",
+        filtered: "Filtered Product Price List",
+        selected: "Selected Product Price List",
+        category: `Category Price List${priceListCategory !== "all" ? ` - ${categoryMap[priceListCategory] || "Uncategorized"}` : ""}`,
+      };
+      const reportTitle = titleByMode[priceListMode] || "Product Price List";
+      const printableWindow = window.open("", "_blank", "noopener,noreferrer,width=1100,height=800");
+      if (!printableWindow) {
+        await showAlertDialog({
+          title: "Unable to open print preview",
+          message: "Please allow pop-ups for this site and try again.",
+          tone: "danger",
+        });
+        return;
+      }
+
+      const companyName = storeProfile.companyName || storeProfile.storeName || "Business";
+      const headerMeta = [storeProfile.storePhone, storeProfile.email].filter(Boolean).join(" | ");
+      const logoMarkup = storeProfile.logo
+        ? `<img src="${escapeHtml(storeProfile.logo)}" alt="Business logo" style="width:72px;height:72px;object-fit:contain;border-radius:12px;border:1px solid #d1d5db;background:#fff;padding:8px;" />`
+        : "";
+
+      const tableRows = rows.map((product, index) => {
+        const categoryLabel = categoryMap[product.category] || product.category || "Uncategorized";
+        const locations = Array.isArray(product.locations) && product.locations.length > 0
+          ? product.locations.join(", ")
+          : "Unassigned";
+        return `
+          <tr>
+            <td>${index + 1}</td>
+            <td>${escapeHtml(product.name || "")}</td>
+            <td>${escapeHtml(categoryLabel)}</td>
+            <td>${escapeHtml(product.barcode || "-")}</td>
+            <td>${escapeHtml(locations)}</td>
+            <td class="price">${escapeHtml(formatCurrency(product.salePriceIncTax || 0))}</td>
+          </tr>
+        `;
+      }).join("");
+
+      printableWindow.document.open();
+      printableWindow.document.write(`
+        <!doctype html>
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>${escapeHtml(reportTitle)}</title>
+            <style>
+              :root {
+                color-scheme: light;
+              }
+              * {
+                box-sizing: border-box;
+              }
+              body {
+                margin: 0;
+                padding: 24px;
+                font-family: "Segoe UI", Arial, sans-serif;
+                color: #0f172a;
+                background: linear-gradient(160deg, #f8fafc, #eef2ff 55%, #ecfeff);
+              }
+              .sheet {
+                background: #ffffff;
+                border: 1px solid #dbe4ff;
+                border-radius: 18px;
+                padding: 24px;
+                box-shadow: 0 10px 32px rgba(15, 23, 42, 0.08);
+              }
+              .header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 16px;
+                margin-bottom: 20px;
+              }
+              .brand h1 {
+                margin: 0;
+                font-size: 24px;
+                line-height: 1.1;
+              }
+              .brand p {
+                margin: 6px 0 0;
+                color: #475569;
+                font-size: 12px;
+              }
+              .report-title {
+                margin: 0 0 6px;
+                font-size: 18px;
+                color: #1d4ed8;
+              }
+              .meta {
+                margin: 0;
+                font-size: 12px;
+                color: #475569;
+              }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 12px;
+                font-size: 12px;
+              }
+              th, td {
+                border: 1px solid #e2e8f0;
+                padding: 8px 9px;
+                text-align: left;
+                vertical-align: top;
+              }
+              th {
+                background: #eff6ff;
+                color: #1e3a8a;
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.03em;
+              }
+              .price {
+                font-weight: 700;
+                text-align: right;
+              }
+              .footer {
+                margin-top: 14px;
+                display: flex;
+                justify-content: space-between;
+                gap: 12px;
+                color: #475569;
+                font-size: 11px;
+              }
+              @media print {
+                body {
+                  background: #fff;
+                  padding: 0;
+                }
+                .sheet {
+                  border: 0;
+                  border-radius: 0;
+                  box-shadow: none;
+                  padding: 0;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <main class="sheet">
+              <header class="header">
+                <div class="brand">
+                  <h1>${escapeHtml(companyName)}</h1>
+                  ${headerMeta ? `<p>${escapeHtml(headerMeta)}</p>` : ""}
+                  <h2 class="report-title">${escapeHtml(reportTitle)}</h2>
+                  <p class="meta">Generated ${escapeHtml(printedAt.toLocaleString())}</p>
+                </div>
+                ${logoMarkup}
+              </header>
+
+              <table>
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Product</th>
+                    <th>Category</th>
+                    <th>Barcode</th>
+                    <th>Location</th>
+                    <th style="text-align:right;">Sale Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${tableRows}
+                </tbody>
+              </table>
+
+              <div class="footer">
+                <span>Total products: ${rows.length}</span>
+                <span>Printed from inventory admin</span>
+              </div>
+            </main>
+            <script>
+              window.addEventListener("load", () => {
+                setTimeout(() => {
+                  window.print();
+                }, 250);
+              });
+            </script>
+          </body>
+        </html>
+      `);
+      printableWindow.document.close();
+      closePriceListModal();
+    } finally {
+      setIsPrintingPriceList(false);
+    }
+  };
+
   if (productsError) {
     return (
       <Layout>
@@ -608,6 +900,13 @@ export default function Products() {
         <div className="page-header flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h1 className="page-title">Products</h1>
           <div className="flex gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={openPriceListModal}
+              className="btn-action-secondary flex items-center gap-2"
+            >
+              <Printer size={16} /> Print Price List
+            </button>
             <button
               onClick={async () => {
                 try {
@@ -677,6 +976,24 @@ export default function Products() {
                 </option>
               ))}
             </select>
+              <div className="flex items-center gap-2 sm:ml-2">
+                <button
+                  type="button"
+                  onClick={toggleSelectVisibleProducts}
+                  className="btn-action-secondary !px-3 !py-2 text-xs"
+                >
+                  {allVisibleSelected ? "Unselect Page" : "Select Page"}
+                </button>
+                {selectedProductIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProductIds([])}
+                    className="btn-action-secondary !px-3 !py-2 text-xs"
+                  >
+                    Clear Selection ({selectedProductIds.length})
+                  </button>
+                )}
+              </div>
           </div>
         </div>
 
@@ -686,6 +1003,17 @@ export default function Products() {
             <thead>
               <tr>
                 <th className="!px-2"></th>
+                <th className="!px-2">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={(event) => {
+                      event.stopPropagation();
+                      toggleSelectVisibleProducts();
+                    }}
+                    aria-label="Select visible products"
+                  />
+                </th>
                 <th className="!px-2">Adv</th>
                 <th>Name</th>
                 <th className="hidden sm:table-cell">Description</th>
@@ -706,13 +1034,13 @@ export default function Products() {
             <tbody className="bg-white divide-y divide-gray-100">
               {productsLoading ? (
                 <tr>
-                  <td colSpan={15} className="p-8 text-center">
+                  <td colSpan={16} className="p-8 text-center">
                     <Loader size="sm" text="Loading product list..." />
                   </td>
                 </tr>
               ) : visibleProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="p-6 text-center text-gray-500 italic">
+                  <td colSpan={16} className="p-6 text-center text-gray-500 italic">
                     No products found.
                   </td>
                 </tr>
@@ -765,6 +1093,18 @@ export default function Products() {
                             Edit
                           </button>
                         )}
+                      </td>
+
+                      <td className="p-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedProductIds.includes(p._id)}
+                          onChange={(event) => {
+                            event.stopPropagation();
+                            toggleProductSelection(p._id);
+                          }}
+                          aria-label={`Select ${p.name}`}
+                        />
                       </td>
 
                       <td className="p-2">
@@ -1059,6 +1399,94 @@ export default function Products() {
             )}
           </div>
         </div>
+
+        {showPriceListModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+            <div className="w-full max-w-xl rounded-xl border border-gray-200 bg-white p-6 shadow-xl">
+              <h2 className="text-lg font-semibold text-gray-900">Print Product Price List</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Choose what to include. In the print dialog you can print directly or save as PDF.
+              </p>
+
+              <div className="mt-5 space-y-3">
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input
+                    type="radio"
+                    name="priceListMode"
+                    value="all"
+                    checked={priceListMode === "all"}
+                    onChange={(event) => setPriceListMode(event.target.value)}
+                  />
+                  General product list ({allProducts.length})
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input
+                    type="radio"
+                    name="priceListMode"
+                    value="filtered"
+                    checked={priceListMode === "filtered"}
+                    onChange={(event) => setPriceListMode(event.target.value)}
+                  />
+                  Current filtered list ({filteredProducts.length})
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input
+                    type="radio"
+                    name="priceListMode"
+                    value="selected"
+                    checked={priceListMode === "selected"}
+                    onChange={(event) => setPriceListMode(event.target.value)}
+                  />
+                  Selected products ({selectedProductIds.length})
+                </label>
+                <div className="space-y-2 rounded-lg border border-gray-200 p-3">
+                  <label className="flex items-center gap-2 text-sm text-gray-800">
+                    <input
+                      type="radio"
+                      name="priceListMode"
+                      value="category"
+                      checked={priceListMode === "category"}
+                      onChange={(event) => setPriceListMode(event.target.value)}
+                    />
+                    Product list by category
+                  </label>
+                  <select
+                    className="form-select w-full"
+                    disabled={priceListMode !== "category"}
+                    value={priceListCategory}
+                    onChange={(event) => setPriceListCategory(event.target.value)}
+                  >
+                    <option value="all">All categories</option>
+                    {allCategoryOptions.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closePriceListModal}
+                  className="btn-action-secondary"
+                  disabled={isPrintingPriceList}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrintPriceList}
+                  disabled={isPrintingPriceList}
+                  className="btn-action-primary"
+                >
+                  {isPrintingPriceList ? "Preparing..." : "Print / Save PDF"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         </div>
       </div>
     </Layout>

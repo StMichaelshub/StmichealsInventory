@@ -2,7 +2,7 @@ import Layout from "@/components/Layout";
 import Loader from "@/components/Loader";
 import { formatCurrency } from "@/lib/format";
 import { useEffect, useMemo, useState } from "react";
-import { CreditCard, Package, Plus, RefreshCw, RotateCcw, Search, WalletCards, X } from "lucide-react";
+import { CreditCard, Download, Package, Plus, RefreshCw, RotateCcw, Search, WalletCards, X } from "lucide-react";
 
 function todayKey() {
   const today = new Date();
@@ -41,6 +41,7 @@ export default function CreditManagement() {
   const [reviewCredit, setReviewCredit] = useState(null);
   const [returnItems, setReturnItems] = useState([]);
   const [returnNotes, setReturnNotes] = useState("");
+  const [invoiceLoadingId, setInvoiceLoadingId] = useState("");
 
   const fetchTenders = async () => {
     try {
@@ -185,6 +186,40 @@ export default function CreditManagement() {
     };
     const ok = await postAction(payload, "Stock restored successfully. Credit balance adjusted.");
     if (ok) closeStockReview();
+  };
+
+  const downloadInvoice = async (credit) => {
+    if (!credit?._id) return;
+    setInvoiceLoadingId(credit._id);
+    setMessage({ type: "", text: "" });
+
+    try {
+      const response = await fetch(`/api/credits/invoice?transactionId=${encodeURIComponent(credit._id)}`);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.message || "Failed to generate invoice");
+      }
+
+      const blob = await response.blob();
+      const fallbackName = `credit-invoice-${credit._id}.pdf`;
+      const disposition = response.headers.get("content-disposition") || "";
+      const filenameMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
+      const filename = filenameMatch?.[1] || fallbackName;
+
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      console.error("Invoice download failed:", error);
+      setMessage({ type: "error", text: error.message || "Unable to download invoice" });
+    } finally {
+      setInvoiceLoadingId("");
+    }
   };
 
   const selectedCredit = (data.credits || []).find((credit) => credit._id === paymentForm.transactionId);
@@ -333,11 +368,22 @@ export default function CreditManagement() {
                           {credit.creditPayments?.length ? credit.creditPayments.map((payment) => `#${payment.sequence || 1} ${formatCurrency(payment.amount || 0)}`).join(" · ") : "No recovery yet"}
                         </td>
                         <td>
-                          {!["paid", "written_off"].includes(credit.creditStatus) && credit.items?.length > 0 && (
-                            <button onClick={() => openStockReview(credit)} className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
-                              <Package className="w-3.5 h-3.5" /> Review Stock
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={() => downloadInvoice(credit)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
+                              disabled={invoiceLoadingId === credit._id}
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              {invoiceLoadingId === credit._id ? "Preparing..." : "Invoice PDF"}
                             </button>
-                          )}
+
+                            {!["paid", "written_off"].includes(credit.creditStatus) && credit.items?.length > 0 && (
+                              <button onClick={() => openStockReview(credit)} className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
+                                <Package className="w-3.5 h-3.5" /> Review Stock
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
