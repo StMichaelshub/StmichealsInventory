@@ -22,6 +22,16 @@ const FONT_CANDIDATES = {
   ],
 };
 
+const GOOGLE_FONT_URLS = {
+  regular: "https://fonts.gstatic.com/s/roboto/v30/KFOmCnqEu92Fr1Mu4mxM.ttf",
+  bold: "https://fonts.gstatic.com/s/roboto/v30/KFOlCnqEu92Fr1MmWUlvAw.ttf",
+};
+
+const GOOGLE_FONT_CACHE = {
+  regular: null,
+  bold: null,
+};
+
 function toMoney(value) {
   const number = Number(value || 0);
   return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0;
@@ -64,20 +74,68 @@ async function resolveFontPath(candidates = []) {
   return null;
 }
 
-async function registerPdfFonts(doc) {
-  const regularPath = await resolveFontPath(FONT_CANDIDATES.regular);
-  const boldPath = await resolveFontPath(FONT_CANDIDATES.bold);
-
-  if (regularPath) {
-    doc.registerFont("AppRegular", regularPath);
+async function loadGoogleFontBuffer(kind) {
+  if (GOOGLE_FONT_CACHE[kind]) {
+    return GOOGLE_FONT_CACHE[kind];
   }
-  if (boldPath) {
-    doc.registerFont("AppBold", boldPath);
+
+  const url = GOOGLE_FONT_URLS[kind];
+  if (!url) return null;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    GOOGLE_FONT_CACHE[kind] = buffer;
+    return buffer;
+  } catch {
+    return null;
+  }
+}
+
+async function registerPdfFonts(doc) {
+  let regularName = "";
+  let boldName = "";
+
+  const googleRegular = await loadGoogleFontBuffer("regular");
+  if (googleRegular) {
+    doc.registerFont("RobotoRegular", googleRegular);
+    regularName = "RobotoRegular";
+  }
+
+  const googleBold = await loadGoogleFontBuffer("bold");
+  if (googleBold) {
+    doc.registerFont("RobotoBold", googleBold);
+    boldName = "RobotoBold";
+  }
+
+  if (!regularName) {
+    const regularPath = await resolveFontPath(FONT_CANDIDATES.regular);
+    if (regularPath) {
+      doc.registerFont("FallbackRegular", regularPath);
+      regularName = "FallbackRegular";
+    }
+  }
+
+  if (!boldName) {
+    const boldPath = await resolveFontPath(FONT_CANDIDATES.bold);
+    if (boldPath) {
+      doc.registerFont("FallbackBold", boldPath);
+      boldName = "FallbackBold";
+    }
+  }
+
+  if (!regularName) {
+    throw new Error("No compatible Unicode regular font available for PDF generation");
+  }
+  if (!boldName) {
+    boldName = regularName;
   }
 
   return {
-    regular: regularPath ? "AppRegular" : "Helvetica",
-    bold: boldPath ? "AppBold" : "Helvetica-Bold",
+    regular: regularName,
+    bold: boldName,
   };
 }
 

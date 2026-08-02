@@ -121,30 +121,45 @@ function drawCustomerFormCard(doc, { x, y, width, height, fonts, companyName, se
   drawLineField(doc, { label: "Date", x: x + 10, y: y + 106, width: width - 20, fonts });
 }
 
-function drawCutGuides(doc) {
-  const margin = 30;
-  const pageWidth = 595.28;
-  const pageHeight = 841.89;
-  const midX = pageWidth / 2;
-  const midY = pageHeight / 2;
+function drawCutGuides(doc, { xPositions, yPositions, cardWidth, cardHeight }) {
+  const leftEdge = xPositions[0];
+  const rightEdge = xPositions[xPositions.length - 1] + cardWidth;
+  const topEdge = yPositions[0];
+  const bottomEdge = yPositions[yPositions.length - 1] + cardHeight;
 
-  doc
-    .moveTo(midX, margin)
-    .lineTo(midX, pageHeight - margin)
-    .dash(4, { space: 4 })
-    .strokeColor("#CBD5E1")
-    .lineWidth(0.7)
-    .stroke()
-    .undash();
+  const verticalCuts = [];
+  for (let col = 0; col < xPositions.length - 1; col += 1) {
+    const leftCardRightEdge = xPositions[col] + cardWidth;
+    const rightCardLeftEdge = xPositions[col + 1];
+    verticalCuts.push((leftCardRightEdge + rightCardLeftEdge) / 2);
+  }
 
-  doc
-    .moveTo(margin, midY)
-    .lineTo(pageWidth - margin, midY)
-    .dash(4, { space: 4 })
-    .strokeColor("#CBD5E1")
-    .lineWidth(0.7)
-    .stroke()
-    .undash();
+  const horizontalCuts = [];
+  for (let row = 0; row < yPositions.length - 1; row += 1) {
+    const upperCardBottom = yPositions[row] + cardHeight;
+    const lowerCardTop = yPositions[row + 1];
+    horizontalCuts.push((upperCardBottom + lowerCardTop) / 2);
+  }
+
+  doc.dash(4, { space: 4 });
+  verticalCuts.forEach((x) => {
+    doc
+      .moveTo(x, topEdge)
+      .lineTo(x, bottomEdge)
+      .strokeColor("#CBD5E1")
+      .lineWidth(0.7)
+      .stroke();
+  });
+
+  horizontalCuts.forEach((y) => {
+    doc
+      .moveTo(leftEdge, y)
+      .lineTo(rightEdge, y)
+      .strokeColor("#CBD5E1")
+      .lineWidth(0.7)
+      .stroke();
+  });
+  doc.undash();
 }
 
 export default async function handler(req, res) {
@@ -178,9 +193,9 @@ export default async function handler(req, res) {
     doc.pipe(res);
 
     const cardWidth = 262;
-    const cardHeight = 90;
+    const cardHeight = 162;
     const xPositions = [34, 300];
-    const yPositions = [74, 168, 262, 356];
+    const yPositions = [74, 246, 418, 590];
 
     for (let index = 0; index < totalForms; index += 1) {
       if (index > 0 && index % formsPerPage === 0) {
@@ -209,7 +224,7 @@ export default async function handler(req, res) {
           .fillColor("#475569")
           .text("Print this page and cut on dotted lines to get 8 customer forms.", 72, 40, { width: 488 });
 
-        drawCutGuides(doc);
+        drawCutGuides(doc, { xPositions, yPositions, cardWidth, cardHeight });
       }
 
       const column = indexInPage % 2;
