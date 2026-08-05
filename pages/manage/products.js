@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Printer, Search } from "lucide-react";
+import { Printer, Search, X } from "lucide-react";
 import Layout from "@/components/Layout";
 import { formatCurrency as formatCurrencyValue } from "@/lib/format";
 import axios from "axios";
