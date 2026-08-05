@@ -1338,30 +1338,33 @@ export default function Products() {
                         <span className="text-[11px] text-slate-400">All categories included by default</span>
                       )}
                     </div>
-                    <div className="max-h-36 space-y-1.5 overflow-y-auto pr-1">
+                    <div className="max-h-36 space-y-1 overflow-y-auto pr-1">
                       {allCategoryOptions.map((cat) => {
                         const isChecked = priceListCategories.includes(cat.id);
                         return (
-                          <label
+                          <div
                             key={cat.id}
-                            className={`flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium cursor-pointer transition ${
-                              isChecked ? "bg-blue-100/60 text-blue-900" : "hover:bg-slate-100 text-slate-700"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => {
+                              setPriceListCategories((prev) =>
+                                isChecked ? prev.filter((id) => id !== cat.id) : [...prev, cat.id]
+                              );
+                            }}
+                            onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); setPriceListCategories((prev) => isChecked ? prev.filter((id) => id !== cat.id) : [...prev, cat.id]); } }}
+                            className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm cursor-pointer select-none transition ${
+                              isChecked ? "bg-blue-50 text-blue-900" : "hover:bg-slate-100 text-slate-700"
                             }`}
                           >
-                            <span className="truncate">{cat.label}</span>
                             <input
                               type="checkbox"
+                              readOnly
                               checked={isChecked}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setPriceListCategories((prev) => [...prev, cat.id]);
-                                } else {
-                                  setPriceListCategories((prev) => prev.filter((id) => id !== cat.id));
-                                }
-                              }}
-                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              tabIndex={-1}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 pointer-events-none flex-shrink-0"
                             />
-                          </label>
+                            <span className="leading-tight">{cat.label}</span>
+                          </div>
                         );
                       })}
                     </div>
