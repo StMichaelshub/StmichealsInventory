@@ -135,7 +135,8 @@ export default function Products() {
   const [selectedProductIds, setSelectedProductIds] = useState([]);
   const [showPriceListModal, setShowPriceListModal] = useState(false);
   const [priceListMode, setPriceListMode] = useState("all");
-  const [priceListCategory, setPriceListCategory] = useState("all");
+  const [priceListCategories, setPriceListCategories] = useState([]);
+  const [priceListExcludeUnitProducts, setPriceListExcludeUnitProducts] = useState(false);
   const [isPrintingPriceList, setIsPrintingPriceList] = useState(false);
 
   // pagination
@@ -606,7 +607,8 @@ export default function Products() {
 
   const openPriceListModal = () => {
     setPriceListMode(selectedProductIds.length > 0 ? "selected" : "all");
-    setPriceListCategory(selectedCategory !== "all" ? selectedCategory : "all");
+    setPriceListCategories(selectedCategory !== "all" ? [selectedCategory] : []);
+    setPriceListExcludeUnitProducts(false);
     setShowPriceListModal(true);
   };
 
@@ -615,21 +617,28 @@ export default function Products() {
   };
 
   const getPriceListProducts = () => {
+    let products;
     if (priceListMode === "selected") {
       const selectedIds = new Set(selectedProductIds);
-      return allProducts.filter((product) => selectedIds.has(product._id));
+      products = allProducts.filter((product) => selectedIds.has(product._id));
+    } else if (priceListMode === "filtered") {
+      products = filteredProducts;
+    } else if (priceListMode === "category") {
+      if (priceListCategories.length === 0) {
+        products = allProducts;
+      } else {
+        const categorySet = new Set(priceListCategories);
+        products = allProducts.filter((product) => categorySet.has(product.category));
+      }
+    } else {
+      products = allProducts;
     }
 
-    if (priceListMode === "filtered") {
-      return filteredProducts;
+    if (priceListExcludeUnitProducts) {
+      products = products.filter((product) => !product.isChildProduct);
     }
 
-    if (priceListMode === "category") {
-      if (priceListCategory === "all") return allProducts;
-      return allProducts.filter((product) => product.category === priceListCategory);
-    }
-
-    return allProducts;
+    return products;
   };
 
   const handlePrintPriceList = async () => {
@@ -648,11 +657,14 @@ export default function Products() {
 
     setIsPrintingPriceList(true);
     try {
+      const categoryTitle = priceListCategories.length > 0
+        ? priceListCategories.map((id) => categoryMap[id] || "Uncategorized").join(", ")
+        : "All";
       const titleByMode = {
         all: "General Product Price List",
         filtered: "Filtered Product Price List",
         selected: "Selected Product Price List",
-        category: `Category Price List${priceListCategory !== "all" ? ` - ${categoryMap[priceListCategory] || "Uncategorized"}` : ""}`,
+        category: `Category Price List - ${categoryTitle}`,
       };
       const reportTitle = titleByMode[priceListMode] || "Product Price List";
       const response = await fetch("/api/products/price-list", {
@@ -1245,11 +1257,13 @@ export default function Products() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
             <div className="w-full max-w-xl rounded-xl border border-gray-200 bg-white p-6 shadow-xl">
               <h2 className="text-lg font-semibold text-gray-900">Print Product Price List</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                Choose what to include and the system will download a PDF directly.
+              <p className="mt-1 text-sm text-gray-500">
+                Choose what to include and download as PDF.
               </p>
 
-              <div className="mt-5 space-y-3">
+              {/* Source selection */}
+              <div className="mt-5 space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Source</p>
                 <label className="flex items-center gap-2 text-sm text-gray-800">
                   <input
                     type="radio"
@@ -1258,7 +1272,7 @@ export default function Products() {
                     checked={priceListMode === "all"}
                     onChange={(event) => setPriceListMode(event.target.value)}
                   />
-                  General product list ({allProducts.length})
+                  All products ({allProducts.length})
                 </label>
                 <label className="flex items-center gap-2 text-sm text-gray-800">
                   <input
@@ -1280,31 +1294,65 @@ export default function Products() {
                   />
                   Selected products ({selectedProductIds.length})
                 </label>
-                <div className="space-y-2 rounded-lg border border-gray-200 p-3">
-                  <label className="flex items-center gap-2 text-sm text-gray-800">
-                    <input
-                      type="radio"
-                      name="priceListMode"
-                      value="category"
-                      checked={priceListMode === "category"}
-                      onChange={(event) => setPriceListMode(event.target.value)}
-                    />
-                    Product list by category
-                  </label>
-                  <select
-                    className="form-select w-full"
-                    disabled={priceListMode !== "category"}
-                    value={priceListCategory}
-                    onChange={(event) => setPriceListCategory(event.target.value)}
-                  >
-                    <option value="all">All categories</option>
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input
+                    type="radio"
+                    name="priceListMode"
+                    value="category"
+                    checked={priceListMode === "category"}
+                    onChange={(event) => setPriceListMode(event.target.value)}
+                  />
+                  By category
+                </label>
+              </div>
+
+              {/* Category multi-select */}
+              {priceListMode === "category" && (
+                <div className="mt-3 rounded-lg border border-gray-200 p-3">
+                  <p className="mb-2 text-xs font-medium text-gray-600">
+                    Select categories (leave all unchecked for all categories)
+                  </p>
+                  <div className="max-h-40 space-y-1 overflow-y-auto">
                     {allCategoryOptions.map((category) => (
-                      <option key={category.id} value={category.id}>
+                      <label key={category.id} className="flex items-center gap-2 text-sm text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={priceListCategories.includes(category.id)}
+                          onChange={(event) => {
+                            if (event.target.checked) {
+                              setPriceListCategories((prev) => [...prev, category.id]);
+                            } else {
+                              setPriceListCategories((prev) => prev.filter((id) => id !== category.id));
+                            }
+                          }}
+                        />
                         {category.label}
-                      </option>
+                      </label>
                     ))}
-                  </select>
+                  </div>
+                  {priceListCategories.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPriceListCategories([])}
+                      className="mt-2 text-xs text-blue-600 hover:underline"
+                    >
+                      Clear selection ({priceListCategories.length} selected)
+                    </button>
+                  )}
                 </div>
+              )}
+
+              {/* Filters */}
+              <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-3">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Filters</p>
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={priceListExcludeUnitProducts}
+                    onChange={(event) => setPriceListExcludeUnitProducts(event.target.checked)}
+                  />
+                  Exclude unit/child products (show only standard &amp; parent products)
+                </label>
               </div>
 
               <div className="mt-6 flex justify-end gap-3">

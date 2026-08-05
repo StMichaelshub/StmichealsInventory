@@ -257,6 +257,16 @@ export default async function handler(req, res) {
     const items = Array.isArray(transaction.items) ? transaction.items : [];
     const payments = Array.isArray(transaction.creditPayments) ? transaction.creditPayments : [];
 
+    const discount = toMoney(transaction.discount || 0);
+    const incrementAmount = toMoney(transaction.incrementAmount || 0);
+    const deliveryFee = toMoney(transaction.deliveryFee || transaction.shippingCost || 0);
+    const tax = toMoney(transaction.tax || 0);
+    const itemsSubtotal = items.reduce((sum, item) => {
+      const qty = Number(item.qty || item.quantity || 0);
+      const unitPrice = toMoney(item.salePriceIncTax || item.price || 0);
+      return sum + toMoney(qty * unitPrice);
+    }, 0);
+
     const total = toMoney(transaction.creditOriginalTotal || transaction.total || 0);
     const recovered = toMoney(
       payments.length > 0
@@ -484,18 +494,74 @@ export default async function handler(req, res) {
       .stroke();
 
     y += 10;
+
+    // Subtotal (sum of line items)
     doc
       .font(fonts.regular)
       .fontSize(10)
       .fillColor("#0F172A")
-      .text("Original Amount", 355, y, { width: 90, align: "right" });
+      .text("Subtotal", 355, y, { width: 90, align: "right" });
+    drawNairaAmountRight(doc, {
+      amount: itemsSubtotal,
+      x: 455, y, width: 100, font: fonts.regular, fontSize: 10, color: "#0F172A", currency,
+    });
+    y += 16;
+
+    if (tax > 0) {
+      doc.font(fonts.regular).fontSize(10).fillColor("#0F172A")
+        .text("Tax", 355, y, { width: 90, align: "right" });
+      drawNairaAmountRight(doc, {
+        amount: tax, x: 455, y, width: 100, font: fonts.regular, fontSize: 10, color: "#0F172A", currency,
+      });
+      y += 16;
+    }
+
+    if (discount > 0) {
+      const discountLabel = transaction.promotionValueType === "INCREMENT"
+        ? "Price Increment"
+        : `Discount${transaction.discountReason || transaction.customerType ? ` (${transaction.discountReason || transaction.customerType})` : ""}`;
+      doc.font(fonts.regular).fontSize(10).fillColor(transaction.promotionValueType === "INCREMENT" ? "#0F172A" : "#DC2626")
+        .text(discountLabel, 320, y, { width: 125, align: "right" });
+      drawNairaAmountRight(doc, {
+        amount: discount, x: 455, y, width: 100, font: fonts.regular, fontSize: 10,
+        color: transaction.promotionValueType === "INCREMENT" ? "#0F172A" : "#DC2626", currency,
+      });
+      y += 16;
+    }
+
+    if (incrementAmount > 0 && transaction.promotionValueType !== "INCREMENT") {
+      doc.font(fonts.regular).fontSize(10).fillColor("#0F172A")
+        .text("Price Increment", 355, y, { width: 90, align: "right" });
+      drawNairaAmountRight(doc, {
+        amount: incrementAmount, x: 455, y, width: 100, font: fonts.regular, fontSize: 10, color: "#0F172A", currency,
+      });
+      y += 16;
+    }
+
+    if (deliveryFee > 0) {
+      doc.font(fonts.regular).fontSize(10).fillColor("#0F172A")
+        .text("Delivery Fee", 355, y, { width: 90, align: "right" });
+      drawNairaAmountRight(doc, {
+        amount: deliveryFee, x: 455, y, width: 100, font: fonts.regular, fontSize: 10, color: "#0F172A", currency,
+      });
+      y += 16;
+    }
+
+    // Total line
+    doc.moveTo(320, y).lineTo(555, y).strokeColor("#CBD5E1").lineWidth(0.5).stroke();
+    y += 8;
+    doc
+      .font(fonts.bold)
+      .fontSize(10)
+      .fillColor("#0F172A")
+      .text("Invoice Total", 355, y, { width: 90, align: "right" });
 
     drawNairaAmountRight(doc, {
       amount: total,
       x: 455,
       y,
       width: 100,
-      font: fonts.regular,
+      font: fonts.bold,
       fontSize: 10,
       color: "#0F172A",
       currency,

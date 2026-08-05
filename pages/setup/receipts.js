@@ -815,9 +815,13 @@ export default function Receipts() {
                       <span>Subtotal</span>
                       <span>₦3,500.00</span>
                     </div>
+                    <div className="flex justify-between text-red-600" style={{ fontSize: '0.92em' }}>
+                      <span>Discount (Reduce Price):</span>
+                      <span>-₦500.00</span>
+                    </div>
                     <div className="flex justify-between font-bold text-[1.02em]" style={{ paddingTop: '0.8mm', marginTop: '0.8mm', borderTop: '0.5px dashed #444' }}>
                       <span>Total</span>
-                      <span>₦3,500.00</span>
+                      <span>₦3,000.00</span>
                     </div>
                   </div>
 
