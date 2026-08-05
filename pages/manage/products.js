@@ -1254,112 +1254,143 @@ export default function Products() {
         </div>
 
         {showPriceListModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-            <div className="w-full max-w-xl rounded-xl border border-gray-200 bg-white p-6 shadow-xl">
-              <h2 className="text-lg font-semibold text-gray-900">Print Product Price List</h2>
-              <p className="mt-1 text-sm text-gray-500">
-                Choose what to include and download as PDF.
-              </p>
-
-              {/* Source selection */}
-              <div className="mt-5 space-y-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Source</p>
-                <label className="flex items-center gap-2 text-sm text-gray-800">
-                  <input
-                    type="radio"
-                    name="priceListMode"
-                    value="all"
-                    checked={priceListMode === "all"}
-                    onChange={(event) => setPriceListMode(event.target.value)}
-                  />
-                  All products ({allProducts.length})
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-800">
-                  <input
-                    type="radio"
-                    name="priceListMode"
-                    value="filtered"
-                    checked={priceListMode === "filtered"}
-                    onChange={(event) => setPriceListMode(event.target.value)}
-                  />
-                  Current filtered list ({filteredProducts.length})
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-800">
-                  <input
-                    type="radio"
-                    name="priceListMode"
-                    value="selected"
-                    checked={priceListMode === "selected"}
-                    onChange={(event) => setPriceListMode(event.target.value)}
-                  />
-                  Selected products ({selectedProductIds.length})
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-800">
-                  <input
-                    type="radio"
-                    name="priceListMode"
-                    value="category"
-                    checked={priceListMode === "category"}
-                    onChange={(event) => setPriceListMode(event.target.value)}
-                  />
-                  By category
-                </label>
-              </div>
-
-              {/* Category multi-select */}
-              {priceListMode === "category" && (
-                <div className="mt-3 rounded-lg border border-gray-200 p-3">
-                  <p className="mb-2 text-xs font-medium text-gray-600">
-                    Select categories (leave all unchecked for all categories)
-                  </p>
-                  <div className="max-h-40 space-y-1 overflow-y-auto">
-                    {allCategoryOptions.map((category) => (
-                      <label key={category.id} className="flex items-center gap-2 text-sm text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={priceListCategories.includes(category.id)}
-                          onChange={(event) => {
-                            if (event.target.checked) {
-                              setPriceListCategories((prev) => [...prev, category.id]);
-                            } else {
-                              setPriceListCategories((prev) => prev.filter((id) => id !== category.id));
-                            }
-                          }}
-                        />
-                        {category.label}
-                      </label>
-                    ))}
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm animate-fadeIn">
+            <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden transition-all">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                    <Printer size={20} />
                   </div>
-                  {priceListCategories.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setPriceListCategories([])}
-                      className="mt-2 text-xs text-blue-600 hover:underline"
-                    >
-                      Clear selection ({priceListCategories.length} selected)
-                    </button>
-                  )}
+                  <div>
+                    <h2 className="text-base font-bold text-slate-900">Print Product Price List</h2>
+                    <p className="text-xs text-slate-500">Configure products to include in the PDF export</p>
+                  </div>
                 </div>
-              )}
-
-              {/* Filters */}
-              <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-3">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">Filters</p>
-                <label className="flex items-center gap-2 text-sm text-gray-800">
-                  <input
-                    type="checkbox"
-                    checked={priceListExcludeUnitProducts}
-                    onChange={(event) => setPriceListExcludeUnitProducts(event.target.checked)}
-                  />
-                  Exclude unit/child products (show only standard &amp; parent products)
-                </label>
-              </div>
-
-              <div className="mt-6 flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={closePriceListModal}
-                  className="btn-action-secondary"
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+                  disabled={isPrintingPriceList}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                {/* Source options card */}
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Select Product Source
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {[
+                      { id: "all", label: "All Products", count: allProducts.length, desc: "Entire inventory catalog" },
+                      { id: "filtered", label: "Filtered List", count: filteredProducts.length, desc: "Based on current search/filter" },
+                      { id: "selected", label: "Selected", count: selectedProductIds.length, desc: "Hand-picked items" },
+                      { id: "category", label: "By Category", count: null, desc: "Filter by specific categories" },
+                    ].map((opt) => {
+                      const isSelected = priceListMode === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setPriceListMode(opt.id)}
+                          className={`flex flex-col text-left p-3 rounded-xl border text-xs transition-all ${
+                            isSelected
+                              ? "border-blue-500 bg-blue-50/50 ring-1 ring-blue-500 text-blue-900"
+                              : "border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between font-semibold">
+                            <span>{opt.label}</span>
+                            {opt.count !== null && (
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                  isSelected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {opt.count}
+                              </span>
+                            )}
+                          </div>
+                          <span className="mt-1 text-[11px] text-slate-400">{opt.desc}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Category multi-select list */}
+                {priceListMode === "category" && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3.5 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-700">Categories</span>
+                      {priceListCategories.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setPriceListCategories([])}
+                          className="text-[11px] font-medium text-blue-600 hover:underline"
+                        >
+                          Clear ({priceListCategories.length})
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-400">All categories included by default</span>
+                      )}
+                    </div>
+                    <div className="max-h-36 space-y-1.5 overflow-y-auto pr-1">
+                      {allCategoryOptions.map((cat) => {
+                        const isChecked = priceListCategories.includes(cat.id);
+                        return (
+                          <label
+                            key={cat.id}
+                            className={`flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-xs font-medium cursor-pointer transition ${
+                              isChecked ? "bg-blue-100/60 text-blue-900" : "hover:bg-slate-100 text-slate-700"
+                            }`}
+                          >
+                            <span className="truncate">{cat.label}</span>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setPriceListCategories((prev) => [...prev, cat.id]);
+                                } else {
+                                  setPriceListCategories((prev) => prev.filter((id) => id !== cat.id));
+                                }
+                              }}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Additional Filters */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3.5">
+                  <label className="flex items-center gap-3 text-xs font-medium text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={priceListExcludeUnitProducts}
+                      onChange={(e) => setPriceListExcludeUnitProducts(e.target.checked)}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
+                    />
+                    <div>
+                      <span className="font-semibold text-slate-900 block">Exclude unit/child products</span>
+                      <span className="text-[11px] text-slate-400">Show standard and parent pack products only</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Actions Footer */}
+              <div className="flex items-center justify-end gap-2.5 border-t border-slate-100 bg-slate-50/50 px-6 py-4">
+                <button
+                  type="button"
+                  onClick={closePriceListModal}
+                  className="btn-action-secondary !py-2 text-xs"
                   disabled={isPrintingPriceList}
                 >
                   Cancel
@@ -1368,9 +1399,10 @@ export default function Products() {
                   type="button"
                   onClick={handlePrintPriceList}
                   disabled={isPrintingPriceList}
-                  className="btn-action-primary"
+                  className="btn-action-primary !py-2 text-xs flex items-center gap-2"
                 >
-                  {isPrintingPriceList ? "Preparing PDF..." : "Download PDF"}
+                  <Printer size={14} />
+                  {isPrintingPriceList ? "Generating PDF..." : "Download PDF"}
                 </button>
               </div>
             </div>
