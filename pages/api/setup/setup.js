@@ -337,6 +337,7 @@ async function handlePost(req, res) {
               Number(receiptSettings.shippingBaseCost) ||
               0
           ),
+          shippingEnabled: receiptSettings.shippingEnabled !== false,
         }
       : null;
 

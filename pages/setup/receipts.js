@@ -38,6 +38,7 @@ export default function Receipts() {
   const [shippingBaseCost, setShippingBaseCost] = useState(2000);
   const [shippingRatePerKm, setShippingRatePerKm] = useState(100);
   const [shippingFallbackCost, setShippingFallbackCost] = useState(2000);
+  const [shippingEnabled, setShippingEnabled] = useState(true);
   const [locations, setLocations] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState("");
   const [loading, setLoading] = useState(true);
@@ -94,6 +95,7 @@ export default function Receipts() {
             parseNumberOrDefault(data.store.shippingBaseCost, 2000)
           )
         );
+        setShippingEnabled(data.store.shippingEnabled !== false);
         
         // Load locations from store
         if (data.store.locations && data.store.locations.length > 0) {
@@ -143,6 +145,9 @@ export default function Receipts() {
               parseNumberOrDefault(settings.shippingBaseCost ?? data.store.shippingBaseCost, 2000)
             )
           );
+          if (settings.shippingEnabled !== undefined || data.store.shippingEnabled !== undefined) {
+            setShippingEnabled((settings.shippingEnabled ?? data.store.shippingEnabled) !== false);
+          }
           // Load logo from localStorage if it exists
           if (settings.companyLogo) {
             setCompanyLogo(settings.companyLogo);
@@ -236,6 +241,7 @@ export default function Receipts() {
         shippingBaseCost: Number(shippingBaseCost) || 0,
         shippingRatePerKm: Number(shippingRatePerKm) || 0,
         shippingFallbackCost: Number(shippingFallbackCost) || Number(shippingBaseCost) || 0,
+        shippingEnabled,
         companyLogo,
         staffName,
         locationQrData,
@@ -431,14 +437,25 @@ export default function Receipts() {
                     />
                   </div>
 
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="mb-3">
-                      <h3 className="text-sm font-semibold text-slate-900">Shipping Pricing</h3>
-                      <p className="text-xs text-slate-600 mt-1">
-                        These values are used by the webpage checkout when calculating delivery totals.
-                      </p>
+                  <div className={`rounded-xl border p-4 ${shippingEnabled ? 'border-slate-200 bg-slate-50' : 'border-slate-200 bg-slate-100 opacity-70'}`}>
+                    <div className="mb-3 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-900">Shipping Pricing</h3>
+                        <p className="text-xs text-slate-600 mt-1">
+                          These values are used by the webpage checkout when calculating delivery totals.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer flex-shrink-0 ml-4">
+                        <input
+                          type="checkbox"
+                          className="sr-only peer"
+                          checked={shippingEnabled}
+                          onChange={(e) => setShippingEnabled(e.target.checked)}
+                        />
+                        <div className="w-9 h-5 bg-gray-300 peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>
+                      </label>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className={`grid grid-cols-1 md:grid-cols-3 gap-4 ${shippingEnabled ? '' : 'pointer-events-none'}`}>
                       <div className="form-group mb-0">
                         <label className="form-label">Base Cost</label>
                         <input
@@ -816,12 +833,16 @@ export default function Receipts() {
                       <span>₦3,500.00</span>
                     </div>
                     <div className="flex justify-between text-red-600" style={{ fontSize: '0.92em' }}>
-                      <span>Discount (Reduce Price):</span>
+                      <span>Sample Promo:</span>
                       <span>-₦500.00</span>
+                    </div>
+                    <div className="flex justify-between text-green-600" style={{ fontSize: '0.92em' }}>
+                      <span>Delivery Fee:</span>
+                      <span>+₦200.00</span>
                     </div>
                     <div className="flex justify-between font-bold text-[1.02em]" style={{ paddingTop: '0.8mm', marginTop: '0.8mm', borderTop: '0.5px dashed #444' }}>
                       <span>Total</span>
-                      <span>₦3,000.00</span>
+                      <span>₦3,200.00</span>
                     </div>
                   </div>
 

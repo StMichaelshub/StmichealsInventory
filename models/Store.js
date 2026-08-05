@@ -60,6 +60,7 @@ const StoreSchema = new mongoose.Schema(
     shippingBaseCost: { type: Number, default: 2000 },
     shippingRatePerKm: { type: Number, default: 100 },
     shippingFallbackCost: { type: Number, default: 2000 },
+    shippingEnabled: { type: Boolean, default: true },
   },
   { timestamps: true }
 );
