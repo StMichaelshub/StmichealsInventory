@@ -7,7 +7,7 @@ export default async function handler(req, res) {
   }
 
   const { token } = req.query;
-  if (!token) {
+  if (typeof token !== "string" || !token.trim()) {
     return res.status(400).json({ error: "Token is required" });
   }
 

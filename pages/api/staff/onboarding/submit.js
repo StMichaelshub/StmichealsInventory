@@ -6,8 +6,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { token, onboardingData, guarantor } = req.body;
-  if (!token) {
+  const { token, onboardingData, guarantor } = req.body || {};
+  // Must be a plain string: an object like {"$ne": null} would match any staff record.
+  if (typeof token !== "string" || !token.trim()) {
     return res.status(400).json({ error: "Token is required" });
   }
 

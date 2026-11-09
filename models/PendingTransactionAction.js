@@ -36,7 +36,7 @@ const PendingTransactionActionSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["pending", "approved", "rejected", "expired"],
+    enum: ["pending", "processing", "approved", "rejected", "expired"],
     default: "pending",
   },
   expiresAt: {

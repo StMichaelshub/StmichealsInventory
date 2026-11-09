@@ -1,4 +1,5 @@
 import { mongooseConnect } from "@/lib/mongodb";
+import { getAppliedTenderEntries } from "@/lib/tenderMath";
 import { aggregateProductSales } from "@/lib/product-sales-report";
 import Transaction from "@/models/Transactions";
 import Product from "@/models/Product";
@@ -225,18 +226,10 @@ export default async function handler(req, res) {
         salesByLocation["online"] = (salesByLocation["online"] || 0) + tx.total;
       }
 
-      // Handle tenders - support both split payments (new) and single tender (legacy)
-      if (tx.tenderPayments && tx.tenderPayments.length > 0) {
-        // New split payment format
-        tx.tenderPayments.forEach((payment) => {
-          const tenderName = payment.tenderName || "Unknown";
-          salesByTender[tenderName] = (salesByTender[tenderName] || 0) + (payment.amount || 0);
-        });
-      } else if (tx.tenderType) {
-        // Legacy single tender format
-        salesByTender[tx.tenderType] =
-          (salesByTender[tx.tenderType] || 0) + tx.total;
-      }
+      // Tenders: amounts applied to the sale (change taken off cash), matching the POS till
+      getAppliedTenderEntries(tx).forEach(({ name, amount }) => {
+        salesByTender[name] = (salesByTender[name] || 0) + amount;
+      });
 
       totalSales += tx.total || 0;
       totalTransactions += 1;

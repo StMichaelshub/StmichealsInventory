@@ -43,6 +43,21 @@ const TillSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Totals are rebuilt from the linked completed sales (see lib/tillLedger.js),
+    // the same way the POS does, so both apps show the same figures.
+    transactions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Transaction' }],
+    totalSales: { type: Number, default: 0 },
+    transactionCount: { type: Number, default: 0 },
+    tenderBreakdown: { type: Map, of: Number, default: {} },
+    tenderVariances: {
+      type: Map,
+      of: { processed: Number, counted: Number, variance: Number },
+      default: {},
+    },
+    expectedClosingBalance: { type: Number },
+    physicalCount: { type: Number },
+    variance: { type: Number },
+    closingNotes: { type: String, default: '' },
     device: {
       type: String,
       default: 'POS Terminal',

@@ -1,8 +1,12 @@
 // pages/api/expenses/[id].js
 import { mongooseConnect } from "@/lib/mongodb";
+import { requireStaffAuth } from "@/lib/auth-middleware";
 import Expense from "@/models/Expense";
 
 export default async function handler(req, res) {
+  const authError = requireStaffAuth(req, res);
+  if (authError) return authError;
+
   await mongooseConnect();
 
   const { id } = req.query;

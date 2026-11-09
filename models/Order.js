@@ -125,6 +125,14 @@ const orderSchema = new mongoose.Schema(
     // Prevents double inventory deduction across systems.
     // Set to 'paystack' when online payment finalizes, 'admin' when admin delivers.
     inventoryFinalizedBy: { type: String, enum: ["paystack", "admin", "pos", null], default: null },
+
+    // Set when Paystack confirms a payment the order could not accept automatically
+    // (e.g. the reservation had already expired). Staff must check these orders.
+    paymentReviewRequired: { type: Boolean, default: false, index: true },
+    paymentReviewReason: { type: String, default: "" },
+    paymentReviewReference: { type: String, default: "" },
+    paymentReviewAmount: { type: Number, default: 0 },
+    paymentReviewAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

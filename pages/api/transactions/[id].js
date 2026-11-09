@@ -1,8 +1,8 @@
 import { mongooseConnect } from "@/lib/mongoose";
 import { Transaction } from "@/models/Transactions";
 import JournalEntry from "@/models/JournalEntry";
-import { authMiddleware, isStaff } from "@/lib/auth-middleware";
-import { applyInventoryDelta } from "@/lib/transaction-utils";
+import { authMiddleware, isAdmin, isStaff } from "@/lib/auth-middleware";
+import { restockSaleInventoryOnce, unlinkTransactionFromTill } from "@/lib/tillLedger";
 import { postRefundEntry } from "@/lib/accounting";
 
 export default async function handler(req, res) {
@@ -39,7 +39,7 @@ export default async function handler(req, res) {
           .json({ error: `Invalid subStatus. Must be one of: ${validSubStatuses.join(", ")}` });
       }
 
-      const transaction = await Transaction.findById(id);
+      const transaction = await Transaction.findById(id).lean();
       if (!transaction) {
         return res.status(404).json({ error: "Transaction not found" });
       }
@@ -50,33 +50,63 @@ export default async function handler(req, res) {
         });
       }
 
-      const updateData = {};
-      if (status) updateData.status = status;
-      if (subStatus) updateData.subStatus = subStatus;
-      if (refundReason) updateData.refundReason = refundReason;
+      const isVoidOfHeldSale = status === "refunded" && transaction.status === "held";
 
-      const isRefundTransition =
-        status === "refunded" &&
-        transaction.status !== "refunded" &&
-        transaction.status === "completed" &&
-        Boolean(transaction.inventoryUpdated);
-
-      if (isRefundTransition) {
-        await applyInventoryDelta(transaction.items || [], "increment");
-        updateData.inventoryRestockedAt = new Date();
+      // Anything that changes a real sale (refund, status or sub-status edits) is admin only.
+      // Other staff use "Request refund", which emails an admin for approval.
+      if (!isVoidOfHeldSale && !isAdmin(req)) {
+        return res.status(403).json({
+          error: "Only an admin can change a completed sale directly. Use \"Request refund\" so an admin can approve it.",
+        });
       }
 
-      if (status === "refunded") {
-        updateData.refundedAt = transaction.refundedAt || new Date();
-      }
+      let updated;
 
-      const updated = await Transaction.findByIdAndUpdate(id, updateData, {
-        new: true,
-        runValidators: true,
-      });
+      if (status === "refunded" && transaction.status !== "refunded") {
+        // Claim the refund atomically so a double click cannot refund (and restock) twice.
+        updated = await Transaction.findOneAndUpdate(
+          { _id: transaction._id, status: { $ne: "refunded" } },
+          {
+            $set: {
+              status: "refunded",
+              subStatus: subStatus || "void",
+              refundReason: refundReason || transaction.refundReason || (isVoidOfHeldSale ? "Held sale voided" : "Refunded by admin"),
+              refundedAt: new Date(),
+              updatedAt: new Date(),
+              ...(isVoidOfHeldSale ? { voidedAt: new Date(), voidReason: refundReason || "Voided from admin" } : {}),
+            },
+          },
+          { new: true, runValidators: true }
+        );
+
+        if (!updated) {
+          const latest = await Transaction.findById(id);
+          return res.status(200).json({ success: true, alreadyRefunded: true, transaction: latest });
+        }
+
+        if (["completed", "credit"].includes(transaction.status)) {
+          await restockSaleInventoryOnce(updated._id, updated.items || []);
+        }
+
+        // Take the sale off its till so the till, its end-of-day report and the
+        // POS all show the same totals.
+        if (transaction.status === "completed" && transaction.tillId) {
+          await unlinkTransactionFromTill(transaction.tillId, updated._id);
+        }
+      } else {
+        const updateData = { updatedAt: new Date() };
+        if (status) updateData.status = status;
+        if (subStatus) updateData.subStatus = subStatus;
+        if (refundReason) updateData.refundReason = refundReason;
+
+        updated = await Transaction.findByIdAndUpdate(id, updateData, {
+          new: true,
+          runValidators: true,
+        });
+      }
 
       // Auto-post refund journal entry
-      if (status === "refunded" && updated) {
+      if (status === "refunded" && updated && !isVoidOfHeldSale) {
         try {
           await postRefundEntry(updated);
         } catch (acctErr) {
@@ -105,6 +135,10 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "DELETE") {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: "Only an admin can delete transactions." });
+    }
+
     try {
       const transaction = await Transaction.findById(id);
       if (!transaction) {

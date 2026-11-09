@@ -4,6 +4,7 @@ const EndOfDayReportSchema = new mongoose.Schema({
   // References
   storeId: { type: mongoose.Schema.Types.ObjectId, ref: "Store", required: true },
   locationId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  locationName: { type: String, default: "Unknown" },
   tillId: { type: mongoose.Schema.Types.ObjectId, ref: "Till", required: true },
   
   // Staff Info
@@ -28,10 +29,24 @@ const EndOfDayReportSchema = new mongoose.Schema({
   totalSales: Number,
   transactionCount: Number,
   
-  // Tender Breakdown
+  // Tender Breakdown (sales per tender)
   tenderBreakdown: {
     type: Map,
     of: Number,
+    default: {},
+  },
+
+  // Counted amounts per tender at close (written by the POS)
+  tenderActual: {
+    type: Map,
+    of: Number,
+    default: {},
+  },
+
+  // Per-tender reconciliation: processed vs counted
+  tenderVariances: {
+    type: Map,
+    of: { processed: Number, counted: Number, variance: Number },
     default: {},
   },
   

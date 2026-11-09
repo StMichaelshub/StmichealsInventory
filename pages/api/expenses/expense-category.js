@@ -1,4 +1,5 @@
 import { mongooseConnect } from "@/lib/mongodb";
+import { requireStaffAuth } from "@/lib/auth-middleware";
 import ExpenseCategory from "@/models/ExpenseCategory";
 
 const defaultCategories = [
@@ -10,6 +11,9 @@ const defaultCategories = [
 ];
 
 export default async function handler(req, res) {
+  const authError = requireStaffAuth(req, res);
+  if (authError) return authError;
+
   await mongooseConnect();
 
   // 👇 Seed default categories once if collection is empty

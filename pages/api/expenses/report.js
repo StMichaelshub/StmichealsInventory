@@ -1,9 +1,13 @@
 // pages/api/expenses/report.js
 import { mongooseConnect } from "@/lib/mongodb";
+import { requireStaffAuth } from "@/lib/auth-middleware";
 import Expense from "@/models/Expense";
 import PDFDocument from "pdfkit";
 
 export default async function handler(req, res) {
+  const authError = requireStaffAuth(req, res);
+  if (authError) return authError;
+
   if (req.method !== "GET") {
     return res.status(405).json({ message: "Method not allowed" });
   }
@@ -35,7 +39,7 @@ export default async function handler(req, res) {
         .fillColor("black")
         .text(`${i + 1}. ${exp.title}`, { continued: true })
         .fillColor("blue")
-        .text(` ₦${Number(exp.amount).toLocaleString()}`, {
+        .text(` NGN ${Number(exp.amount).toLocaleString()}`, {
           align: "right",
         });
 
@@ -60,7 +64,7 @@ export default async function handler(req, res) {
     doc
       .fontSize(14)
       .fillColor("black")
-      .text(`Total Expenses: ₦${total.toLocaleString()}`, {
+      .text(`Total Expenses: NGN ${total.toLocaleString()}`, {
         align: "right",
       });
 

@@ -1,4 +1,5 @@
 import { mongooseConnect } from "@/lib/mongodb";
+import { requireStaffAuth } from "@/lib/auth-middleware";
 import Promotion from "@/models/Promotion";
 import "@/models/Category";
 import "@/models/Product";
@@ -8,6 +9,9 @@ import "@/models/Product";
  * Get applicable promotions for a customer at the POS
  */
 export default async function handler(req, res) {
+  const authError = requireStaffAuth(req, res);
+  if (authError) return authError;
+
   const { customerType, productId, categoryId } = req.query;
 
   if (req.method !== "GET") {

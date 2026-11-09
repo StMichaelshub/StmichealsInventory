@@ -1,4 +1,5 @@
 import { mongooseConnect } from "@/lib/mongodb";
+import { requireStaffAuth } from "@/lib/auth-middleware";
 import Hero from "@/models/Hero";
 import "@/models/Campaign";
 import "@/models/Promotion";
@@ -111,6 +112,9 @@ function isLinkedScheduleActive(hero, now) {
 }
 
 export default async function handler(req, res) {
+  const authError = requireStaffAuth(req, res);
+  if (authError) return authError;
+
   await mongooseConnect();
 
   try {

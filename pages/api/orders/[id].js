@@ -257,20 +257,34 @@ export default async function handler(req, res) {
         linkedTransaction.staff = actorStaffId;
       }
 
-      if (!order.inventoryFinalizedBy) {
-        await applyInventoryDelta(items, "decrement");
-        await clearReservedInventory(items);
-        linkedTransaction.inventoryUpdated = true;
-        await linkedTransaction.save();
-      } else {
-        console.log(`Order ${order._id} inventory already finalized by '${order.inventoryFinalizedBy}' — skipping deduction`);
-        if (linkedTransaction.inventoryUpdated !== true) {
-          linkedTransaction.inventoryUpdated = true;
-        }
+      // Claim the order's stock deduction atomically. The website (Paystack), the POS
+      // and this screen can all finalise an order; only the first one deducts stock.
+      const claimedForInventory = await Order.findOneAndUpdate(
+        { _id: order._id, inventoryFinalizedBy: null },
+        { $set: { inventoryFinalizedBy: "admin" } },
+        { new: true, projection: { _id: 1 } }
+      );
 
-        if (linkedTransaction.isModified()) {
-          await linkedTransaction.save();
+      if (claimedForInventory) {
+        try {
+          await applyInventoryDelta(items, "decrement");
+          await clearReservedInventory(items);
+        } catch (stockError) {
+          await Order.updateOne(
+            { _id: order._id, inventoryFinalizedBy: "admin" },
+            { $set: { inventoryFinalizedBy: null } }
+          );
+          throw stockError;
         }
+      } else {
+        console.log(`Order ${order._id} inventory already finalized — skipping deduction`);
+      }
+
+      if (linkedTransaction.inventoryUpdated !== true) {
+        linkedTransaction.inventoryUpdated = true;
+      }
+      if (linkedTransaction.isModified()) {
+        await linkedTransaction.save();
       }
 
       if (transactionCreated) {

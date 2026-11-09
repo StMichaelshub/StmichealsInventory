@@ -6,6 +6,8 @@ import Transaction from "@/models/Transactions";
 import Expense from "@/models/Expense";
 import StockMovement from "@/models/StockMovement";
 import jwt from "jsonwebtoken";
+import { userHasPermission } from "@/lib/auth-middleware";
+import { getAppliedTenderEntries } from "@/lib/tenderMath";
 import { createMailTransport, getMailEnvValue, getMailFromAddress } from "@/lib/mail";
 import { aggregateProductSales } from "@/lib/product-sales-report";
 import { buildLocationCache, resolveLocationName } from "@/lib/serverLocationHelper";
@@ -151,32 +153,24 @@ function getCreditBalance(transaction) {
 
 export default async function handler(req, res) {
   try {
-    // Auth check - Allow JWT, CRON_SECRET, or Vercel Cron
-    if (process.env.NODE_ENV === "production") {
-      const key = req.query.key;
-      const auth = req.headers.authorization;
+    // Auth: the Vercel cron (Bearer CRON_SECRET) or a signed-in user with Reporting access. Always enforced,
+    // and the cron path only counts when CRON_SECRET is actually configured.
+    const cronSecret = process.env.CRON_SECRET;
+    const auth = String(req.headers.authorization || "");
+    const isCronRequest =
+      Boolean(cronSecret) &&
+      (req.query.key === cronSecret || auth === `Bearer ${cronSecret}`);
 
-      // Vercel Cron sends Authorization: Bearer <CRON_SECRET>
-      if (
-        key === process.env.CRON_SECRET ||
-        auth === `Bearer ${process.env.CRON_SECRET}`
-      ) {
-        console.log("[Monthly Mail] ✅ Authorized via CRON_SECRET");
-      } else if (auth && auth.startsWith("Bearer ")) {
-        // Verify JWT token for admin users
-        try {
-          const token = auth.substring(7);
-          if (!process.env.JWT_SECRET) {
-            return res.status(500).json({ error: "JWT_SECRET not configured" });
-          }
-          jwt.verify(token, process.env.JWT_SECRET);
-          console.log("[Monthly Mail] ✅ Authorized via JWT token");
-        } catch (tokenErr) {
-          console.log("[Monthly Mail] ❌ Invalid JWT token:", tokenErr.message);
-          return res.status(401).json({ error: "Unauthorized" });
+    if (!isCronRequest) {
+      if (!auth.startsWith("Bearer ") || !process.env.JWT_SECRET) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      try {
+        const decoded = jwt.verify(auth.substring(7), process.env.JWT_SECRET);
+        if (!userHasPermission(decoded, "reporting")) {
+          return res.status(403).json({ error: "Reporting permission required" });
         }
-      } else {
-        console.log("[Monthly Mail] ❌ No valid authorization");
+      } catch (tokenErr) {
         return res.status(401).json({ error: "Unauthorized" });
       }
     }
@@ -200,9 +194,7 @@ export default async function handler(req, res) {
       hasSender: Boolean(getMailEnvValue("MAIL_FROM", "SMTP_FROM", "EMAIL_FROM", "FROM_EMAIL", "SMTP_USER", "EMAIL_USER")),
     });
 
-    const isCronAuthorized =
-      req.query.key === process.env.CRON_SECRET ||
-      req.headers.authorization === `Bearer ${process.env.CRON_SECRET}`;
+    const isCronAuthorized = isCronRequest;
     const forceSend = req.query.force === "1" || req.query.force === "true";
 
     if (isCronAuthorized && !forceSend && !isLastDayOfMonth(new Date())) {
@@ -392,24 +384,13 @@ export default async function handler(req, res) {
         });
       }
 
-      // Aggregate tender totals
-      if (Array.isArray(tx.tenderPayments) && tx.tenderPayments.length > 0) {
-        tx.tenderPayments.forEach((payment) => {
-          const tenderName = payment.tenderName || payment.tenderType || "Unknown";
-          const amount = Number(payment.amount || 0);
-
-          tenderTotals[tenderName] = (tenderTotals[tenderName] || 0) + amount;
-          transactionTenderBreakdownByLocation[locName][tenderName] =
-            (transactionTenderBreakdownByLocation[locName][tenderName] || 0) + amount;
-        });
-      } else {
-        const tender = tx.tenderType || "CASH";
-        const amount = Number(tx.total || 0);
-
-        tenderTotals[tender] = (tenderTotals[tender] || 0) + amount;
-        transactionTenderBreakdownByLocation[locName][tender] =
-          (transactionTenderBreakdownByLocation[locName][tender] || 0) + amount;
-      }
+      // Aggregate tender totals (amounts applied to the sale, change taken off cash,
+      // so they match the POS till and end-of-day figures)
+      getAppliedTenderEntries(tx).forEach(({ name: tenderName, amount }) => {
+        tenderTotals[tenderName] = (tenderTotals[tenderName] || 0) + amount;
+        transactionTenderBreakdownByLocation[locName][tenderName] =
+          (transactionTenderBreakdownByLocation[locName][tenderName] || 0) + amount;
+      });
     }
 
     const displayedTenderBreakdownByLocation =

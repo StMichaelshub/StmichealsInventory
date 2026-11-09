@@ -1,10 +1,14 @@
 // pages/api/expenses/analysis.js
 import PDFDocument from "pdfkit";
+import { requireStaffAuth } from "@/lib/auth-middleware";
 import { mongooseConnect } from "@/lib/mongodb";
 import Expense from "@/models/Expense";
 import path from "path";
 
 export default async function handler(req, res) {
+  const authError = requireStaffAuth(req, res);
+  if (authError) return authError;
+
   if (req.method !== "GET") {
     return res.status(405).json({ message: "Method not allowed" });
   }
@@ -95,7 +99,7 @@ export default async function handler(req, res) {
       .font("Helvetica-Bold")
       .fontSize(20)
       .fillColor("#059669")
-      .text(`₦${totalSpent.toLocaleString()}`, 70, 155);
+      .text(`NGN ${totalSpent.toLocaleString()}`, 70, 155);
 
     doc
       .font("Helvetica")
@@ -166,7 +170,7 @@ export default async function handler(req, res) {
           .fontSize(10)
           .fillColor("#374151")
           .text(name, 60, yPos + 6)
-          .text(`₦${amount.toLocaleString()}`, 400, yPos + 6);
+          .text(`NGN ${amount.toLocaleString()}`, 400, yPos + 6);
 
         yPos += 22;
       });
@@ -207,7 +211,7 @@ export default async function handler(req, res) {
             .fontSize(10)
             .fillColor("#374151")
             .text(name, 60, yPos + 6)
-            .text(`₦${amount.toLocaleString()}`, 400, yPos + 6);
+            .text(`NGN ${amount.toLocaleString()}`, 400, yPos + 6);
 
           yPos += 22;
         });
@@ -260,7 +264,7 @@ export default async function handler(req, res) {
         .text(exp.title?.substring(0, 20) || "N/A", 60, yPos + 7)
         .text(exp.categoryName?.substring(0, 15) || "Uncategorized", 180, yPos + 7)
         .text(exp.locationName?.substring(0, 12) || "N/A", 280, yPos + 7)
-        .text(`₦${Number(exp.amount).toLocaleString()}`, 370, yPos + 7)
+        .text(`NGN ${Number(exp.amount).toLocaleString()}`, 370, yPos + 7)
         .text(new Date(exp.createdAt).toLocaleDateString(), 450, yPos + 7);
 
       yPos += 22;

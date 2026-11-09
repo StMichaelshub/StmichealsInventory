@@ -85,6 +85,8 @@ export default async function handler(req, res) {
         email: user.email,
         name: user.name,
         role: user.role,
+        // Area permissions travel with the session so every API route can enforce them.
+        permissions: normalizePermissions(user.permissions || []),
       },
       '24h'
     );

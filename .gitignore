@@ -34,3 +34,8 @@ yarn-error.log*
 .env
 .env
 .env
+
+# Local build output and editor backups
+*.log
+build_out.txt
+*.bak

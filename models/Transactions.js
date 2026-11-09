@@ -17,9 +17,11 @@ const itemSchema = new mongoose.Schema(
 
 const tenderPaymentSchema = new mongoose.Schema(
   {
+    tenderId: { type: mongoose.Schema.Types.ObjectId },
     tenderType: { type: String },
     tenderName: { type: String },
-    amount: { type: Number, default: 0 },
+    amount: { type: Number, default: 0 }, // amount applied to the sale
+    tendered: { type: Number }, // amount handed over before change (POS)
   },
   { _id: false }
 );
@@ -53,6 +55,22 @@ const TransactionSchema = new mongoose.Schema({
   staff: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
   staffName: { type: String }, // Staff name for reference (redundant but useful)
   location: { type: String }, // Store location as string (location name or 'online')
+  locationId: { type: mongoose.Schema.Types.ObjectId, default: null },
+
+  // Till the sale was rung up on (kept in step with the POS model)
+  tillId: { type: mongoose.Schema.Types.ObjectId, ref: "Till" },
+  originalOfflineTillId: { type: String, default: null },
+  tillLinkMissing: { type: Boolean, default: false },
+
+  // Held sale lifecycle (set by the POS)
+  heldAt: { type: Date, default: null },
+  completedAt: { type: Date, default: null },
+  voidedAt: { type: Date, default: null },
+  voidReason: { type: String, default: "" },
+  voidedByStaffId: { type: mongoose.Schema.Types.ObjectId, ref: "Staff", default: null },
+  voidedByStaffName: { type: String, default: "" },
+  appliedEditIds: { type: [String], default: [] },
+  syncedByStaffId: { type: mongoose.Schema.Types.ObjectId, ref: "Staff", default: null },
   
   // Held-by tracking (who originally held the transaction)
   heldByStaffName: { type: String },
@@ -110,7 +128,7 @@ const TransactionSchema = new mongoose.Schema({
   },
   subStatus: {
     type: String,
-    enum: ["none", "edited", "void"],
+    enum: ["none", "edited", "void", null],
     default: "none",
   },
   change: Number,
@@ -126,6 +144,7 @@ const TransactionSchema = new mongoose.Schema({
   externalId: { type: String },
   dedupeKey: { type: String },
   createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 });
 
 TransactionSchema.index({ externalId: 1 }, { unique: true, sparse: true });
