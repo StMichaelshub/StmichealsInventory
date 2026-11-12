@@ -79,6 +79,10 @@ const TransactionSchema = new mongoose.Schema({
   tableName: String,
   discount: Number,
   discountReason: String,
+  discountName: String,
+  incrementName: String,
+  // Copy of the POS customer promotion used to price the sale
+  appliedPromotion: { type: mongoose.Schema.Types.Mixed, default: null },
   incrementAmount: { type: Number }, // Amount added by INCREMENT promotions
   promotionValueType: { type: String }, // "DISCOUNT" or "INCREMENT"
   customerType: { type: String }, // Customer type / promotion name
